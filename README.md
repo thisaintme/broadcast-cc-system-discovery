@@ -51,3 +51,5 @@ This is the first discovery build. In particular:
 - ONVIF discovery currently identifies responding devices and service addresses; authenticated device metadata can be added after testing against the actual cameras.
 - X32/M32 discovery probes hosts already present in the Mac ARP table plus an optional manually supplied mixer IP. It deliberately does **not** sweep the whole subnet.
 - Companion API formats can vary by version; the report preserves warnings when a response cannot be normalized.
+
+The macOS package is built automatically from the source in `main`.
