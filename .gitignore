@@ -1,0 +1,7 @@
+node_modules/
+dist/
+release/
+broadcast-system-report.json
+.DS_Store
+*.log
+.env
