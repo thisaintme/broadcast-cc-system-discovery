@@ -1,0 +1,55 @@
+{
+  "name": "broadcast-cc-system-discovery",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Read-only macOS discovery app for Broadcast Control Center systems.",
+  "license": "MIT",
+  "main": "dist/main.cjs",
+  "scripts": {
+    "build": "node scripts/build.mjs",
+    "typecheck": "tsc --noEmit",
+    "start": "npm run build && electron .",
+    "dist:mac": "npm run build && electron-builder --mac --universal --publish never"
+  },
+  "dependencies": {
+    "obs-websocket-js": "5.0.8"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "electron": "44.4.1",
+    "electron-builder": "26.16.1",
+    "esbuild": "0.28.2",
+    "typescript": "^5.9.0"
+  },
+  "build": {
+    "appId": "org.broadcastcc.systemdiscovery",
+    "productName": "Broadcast CC System Discovery",
+    "asar": true,
+    "files": [
+      "dist/**/*",
+      "package.json"
+    ],
+    "directories": {
+      "output": "release"
+    },
+    "mac": {
+      "category": "public.app-category.utilities",
+      "target": [
+        {
+          "target": "dmg",
+          "arch": ["universal"]
+        },
+        {
+          "target": "zip",
+          "arch": ["universal"]
+        }
+      ],
+      "identity": null,
+      "hardenedRuntime": false,
+      "extendInfo": {
+        "NSLocalNetworkUsageDescription": "Broadcast CC System Discovery scans the local broadcast network for OBS, Companion, ONVIF cameras and X32/M32 devices."
+      },
+      "artifactName": "Broadcast-CC-System-Discovery-${version}-${arch}.${ext}"
+    }
+  }
+}
