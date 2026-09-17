@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self'; script-src 'self'; img-src 'self' data:; connect-src 'none'" />
+  <title>Broadcast CC System Discovery</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <main>
+    <header>
+      <div>
+        <h1>Broadcast CC System Discovery</h1>
+        <p>Read-only discovery for the broadcast Mac and local broadcast network.</p>
+      </div>
+      <span class="badge">READ ONLY</span>
+    </header>
+
+    <section class="settings">
+      <details>
+        <summary>Connection settings</summary>
+        <div class="settings-grid">
+          <label>OBS WebSocket URL<input id="obs-url" value="ws://127.0.0.1:4455" /></label>
+          <label>OBS password<input id="obs-password" type="password" autocomplete="off" placeholder="Only used for this scan" /></label>
+          <label>Companion URL<input id="companion-url" value="http://127.0.0.1:8000" /></label>
+          <label>X32/M32 IP (optional)<input id="x32-host" placeholder="e.g. 192.168.1.30" /></label>
+        </div>
+        <p class="hint">Passwords are never written to the report. No discovery action changes mixer, camera, OBS, or Companion state.</p>
+      </details>
+    </section>
+
+    <section class="actions">
+      <button id="scan" class="primary">Scan Broadcast System</button>
+      <button id="save" disabled>Export Report</button>
+      <span id="activity"></span>
+    </section>
+
+    <section id="results" class="results hidden">
+      <div class="cards">
+        <article class="card"><h2>Mac</h2><div id="host-status"></div><div id="host-detail" class="detail"></div></article>
+        <article class="card"><h2>OBS</h2><div id="obs-status"></div><div id="obs-detail" class="detail"></div></article>
+        <article class="card"><h2>Companion</h2><div id="companion-status"></div><div id="companion-detail" class="detail"></div></article>
+        <article class="card"><h2>PTZ / ONVIF</h2><div id="onvif-status"></div><div id="onvif-detail" class="detail"></div></article>
+        <article class="card"><h2>X32 / M32</h2><div id="x32-status"></div><div id="x32-detail" class="detail"></div></article>
+      </div>
+      <details class="raw"><summary>Raw sanitized report</summary><pre id="raw"></pre></details>
+    </section>
+
+    <footer>Designed to discover configuration only. It does not move cameras, switch video, change audio, or start/stop streaming.</footer>
+  </main>
+  <script src="renderer.js"></script>
+</body>
+</html>
