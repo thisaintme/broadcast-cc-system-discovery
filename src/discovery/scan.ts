@@ -15,7 +15,7 @@ export async function scanSystem(scannerVersion: string, options: ScanOptions = 
   ]);
 
   return {
-    schemaVersion: 1,
+    schemaVersion: 2,
     scannerVersion,
     generatedAt: new Date().toISOString(),
     safety: { readOnly: true, secretsIncluded: false },
