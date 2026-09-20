@@ -23,6 +23,22 @@ export interface MacReport {
   warnings: string[];
 }
 
+export interface ObsSceneItem {
+  sceneItemId: number;
+  sourceName: string;
+  sourceType?: string;
+  inputKind?: string | null;
+  enabled?: boolean;
+  locked?: boolean;
+  blendMode?: string;
+}
+
+export interface ObsSceneDetail {
+  name: string;
+  items: ObsSceneItem[];
+  warnings: string[];
+}
+
 export interface ObsReport {
   status: ScanStatus;
   url: string;
@@ -34,6 +50,7 @@ export interface ObsReport {
   currentSceneCollection?: string;
   currentProfile?: string;
   scenes: string[];
+  sceneDetails: ObsSceneDetail[];
   inputs: Array<{ name: string; kind: string; unversionedKind?: string }>;
   sceneCollections: string[];
   profiles: string[];
@@ -46,14 +63,44 @@ export interface CompanionConnection {
   id: string;
   label?: string;
   moduleId?: string;
+  moduleVersion?: string;
   enabled?: boolean;
   status?: unknown;
+  host?: string;
+  port?: string | number;
+}
+
+export interface CompanionAction {
+  event: string;
+  connectionId?: string;
+  definitionId?: string;
+  options?: Record<string, unknown>;
+}
+
+export interface CompanionButtonMapping {
+  page: number;
+  row: number;
+  column: number;
+  label?: string;
+  actions: CompanionAction[];
+}
+
+export interface CompanionDiagnostics {
+  source?: 'full-export' | 'api';
+  companionBuild?: string;
+  exportUrl?: string;
+  exportHttpStatus?: number;
+  exportContentType?: string;
+  exportBytes?: number;
+  responsePrefix?: string;
 }
 
 export interface CompanionReport {
   status: ScanStatus;
   url: string;
   connections: CompanionConnection[];
+  buttons: CompanionButtonMapping[];
+  diagnostics: CompanionDiagnostics;
   warnings: string[];
   error?: string;
 }
@@ -90,7 +137,7 @@ export interface X32Report {
 }
 
 export interface BroadcastSystemReport {
-  schemaVersion: 1;
+  schemaVersion: 2;
   scannerVersion: string;
   generatedAt: string;
   safety: { readOnly: true; secretsIncluded: false };
