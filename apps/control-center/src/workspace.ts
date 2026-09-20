@@ -25,9 +25,12 @@ export function connections(raw: unknown): Connection[] {
   return list.slice(0, 100).map((x) => {
     const c=object(x), cfg=object(c.config);
     const host=text(c.host || cfg.host || cfg.ipAddress);
+    const port=Number(c.port ?? cfg.port);
     return { label:text(c.label), module:text(c.module || c.moduleId || c.instance_type),
       version:text(c.version || c.moduleVersion || c.moduleVersionId),
-      host:/^[a-zA-Z0-9.:\[\]_-]+$/.test(host) ? host : '', enabled:c.enabled === true, health:'unknown' as const };
+      host:/^[a-zA-Z0-9.:\[\]_-]+$/.test(host) ? host : '',
+      port:Number.isInteger(port) && port>0 && port<=65535 ? port : undefined,
+      enabled:c.enabled === true, health:'unknown' as const };
   });
 }
 function inventory(raw: unknown): Inventory {
@@ -40,12 +43,19 @@ function inventory(raw: unknown): Inventory {
         source:text(x.source || x.sourceName), kind: text(x.kind || x.inputKind) || null,
         group:x.group === true, container:x.container === true || x.sourceType === 'OBS_SOURCE_TYPE_SCENE',
         enabled:x.enabled === true, index:Number.isInteger(x.index) ? x.index : index,
-      };}), warnings:[] };
+      };}), warnings:n.type==='unknown'?['Could not read this container. No changes were made.']:[] };
   });
   return {origin:'report', collection:text(i.collection || i.currentSceneCollection),
     scenes:array(i.scenes).map((x) => text(typeof x === 'string' ? x : object(x).sceneName)).filter(Boolean),
     inputs:array(i.inputs).map((x)=>({name:text(x.name),kind:text(x.kind)})),
-    nodes, audio:[], capturedAt:text(i.capturedAt),
+    nodes, audio:array(i.audio).map(raw=>{
+      const a=object(raw), tracks:Record<string,boolean>={};
+      for(const [key,value] of Object.entries(object(a.tracks))) if(/^[1-6]$/.test(key) && typeof value==='boolean') tracks[key]=value;
+      return {name:text(a.name),muted:typeof a.muted==='boolean'?a.muted:null,
+        volumeDb:Number.isFinite(a.volumeDb)?a.volumeDb:null,
+        monitor:['OBS_MONITORING_TYPE_NONE','OBS_MONITORING_TYPE_MONITOR_ONLY','OBS_MONITORING_TYPE_MONITOR_AND_OUTPUT'].includes(a.monitor)?a.monitor:null,
+        tracks,warnings:array(a.warnings).filter(x=>typeof x==='string' && /^GetInput(?:Volume|AudioMonitorType|AudioTracks) unavailable\.$/.test(x))};
+    }), capturedAt:text(i.capturedAt),
     warnings:['Imported snapshot, not live status. Inspect OBS to resolve nested groups and current audio state.']};
 }
 export function suggestBindings(i: Inventory): Bindings {

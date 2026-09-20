@@ -20,7 +20,7 @@ export interface Inventory {
   audio: AudioState[]; warnings: string[]; capturedAt: string;
 }
 export interface Connection {
-  label: string; module: string; version: string; host: string;
+  label: string; module: string; version: string; host: string; port?: number;
   enabled: boolean; health: 'unknown';
 }
 export interface Bindings {
