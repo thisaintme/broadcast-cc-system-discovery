@@ -1,0 +1,52 @@
+name: Control Center Preview - macOS
+on:
+  push:
+    branches: [main, control-center-m1]
+    paths:
+      - 'apps/control-center/**'
+      - '.github/workflows/control-center-preview.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: control-center-preview-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  build:
+    runs-on: macos-14
+    timeout-minutes: 25
+    defaults:
+      run:
+        working-directory: apps/control-center
+    env:
+      CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - name: Install pinned direct dependencies
+        run: npm install --no-audit --no-fund
+      - name: Typecheck
+        run: npm run typecheck
+      - name: Safety and domain tests
+        run: npm test
+      - name: Build application
+        run: npm run build
+      - name: Smoke-test Electron startup and rehearsal
+        run: ./node_modules/.bin/electron scripts/smoke.cjs
+      - name: Smoke-test authenticated OBS connection and password retry
+        run: ./node_modules/.bin/electron scripts/smoke-obs.cjs
+      - name: Build universal Mac app
+        run: npm run dist:mac
+      - name: Upload Mac app and resolved dependency lock
+        uses: actions/upload-artifact@v4
+        with:
+          name: Broadcast-Control-Center-Preview-macOS
+          path: |
+            apps/control-center/release/*.dmg
+            apps/control-center/release/*.zip
+            apps/control-center/package-lock.json
+            apps/control-center/release/smoke-test.png
+            apps/control-center/release/obs-connection-smoke.png
+          if-no-files-found: error

@@ -1,0 +1,46 @@
+{
+  "name": "broadcast-control-center-preview",
+  "version": "0.1.0-alpha.2",
+  "private": true,
+  "description": "Local setup and rehearsal milestone for Broadcast Control Center",
+  "license": "MIT",
+  "type": "module",
+  "main": "dist/main.cjs",
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "node --experimental-strip-types --test tests/*.test.mjs",
+    "build": "node scripts/build.mjs",
+    "start": "npm run build && electron .",
+    "dist:mac": "npm run build && electron-builder --mac --universal --publish never"
+  },
+  "dependencies": {
+    "obs-websocket-js": "5.0.8",
+    "react": "19.2.1",
+    "react-dom": "19.2.1"
+  },
+  "devDependencies": {
+    "@types/node": "24.0.0",
+    "@types/react": "19.2.2",
+    "@types/react-dom": "19.2.2",
+    "electron": "44.4.1",
+    "electron-builder": "26.16.1",
+    "esbuild": "0.28.2",
+    "typescript": "5.9.3",
+    "ws": "8.21.3"
+  },
+  "build": {
+    "appId": "org.broadcastcc.controlcenter.preview",
+    "productName": "Broadcast Control Center Preview",
+    "asar": true,
+    "files": ["dist/**/*", "package.json"],
+    "directories": {"output": "release"},
+    "mac": {
+      "category": "public.app-category.utilities",
+      "target": [{"target":"dmg","arch":["universal"]},{"target":"zip","arch":["universal"]}],
+      "identity": null,
+      "hardenedRuntime": false,
+      "extendInfo": {"NSLocalNetworkUsageDescription":"Connect to OBS and Companion on this Mac for operator-approved setup and rehearsal."},
+      "artifactName": "Broadcast-Control-Center-Preview-${version}-${arch}.${ext}"
+    }
+  }
+}
