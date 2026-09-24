@@ -38,6 +38,8 @@ export interface TransportState {
   connected: boolean; streaming: boolean | null; recording: boolean | null;
   virtualCamera: boolean | null; replayBuffer: boolean | null;
   studio: boolean | null; program: string; preview: string; collection: string;
+  /** Session-only diagnostics. An unknown output is never treated as off. */
+  statusWarnings?: string[];
 }
 export interface EventEntry { at: string; message: string }
 export interface RuntimeState {
@@ -61,7 +63,7 @@ export const blankWorkspace = (): Workspace => ({
 });
 export const disconnected = (): TransportState => ({
   connected:false, streaming:null, recording:null, virtualCamera:null,
-  replayBuffer:null, studio:null, program:'', preview:'', collection:'',
+  replayBuffer:null, studio:null, program:'', preview:'', collection:'',statusWarnings:[],
 });
 export type ReadRequest =
   | 'GetVersion' | 'GetSceneList' | 'GetGroupList' | 'GetInputList'

@@ -1,6 +1,6 @@
 {
   "name": "broadcast-control-center-preview",
-  "version": "0.1.0-alpha.1",
+  "version": "0.1.0-alpha.2",
   "private": true,
   "description": "Local setup and rehearsal milestone for Broadcast Control Center",
   "license": "MIT",
@@ -25,7 +25,8 @@
     "electron": "44.4.1",
     "electron-builder": "26.16.1",
     "esbuild": "0.28.2",
-    "typescript": "5.9.3"
+    "typescript": "5.9.3",
+    "ws": "8.21.3"
   },
   "build": {
     "appId": "org.broadcastcc.controlcenter.preview",

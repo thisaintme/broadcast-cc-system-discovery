@@ -1,5 +1,6 @@
 import type {Reader, Inventory, SceneNode, AudioState, ReadRequest, TransportState} from './model.ts';
 import {object, text} from './workspace.ts';
+import {requestFailure} from './obs-errors.ts';
 /** Read-only graph traversal. Groups have a separate OBS request; cycles are never expanded twice. */
 export async function inspectObs(reader: Reader): Promise<Inventory> {
   const [scenes, inputs, collections] = await Promise.all([
@@ -33,7 +34,6 @@ export async function inspectObs(reader: Reader): Promise<Inventory> {
   const audio:AudioState[]=[];
   const inputList=(inputs.inputs || []).slice(0,150).map((x:any)=>({name:text(x.inputName),kind:text(x.inputKind)}));
   for(const input of inputList) {
-    // Includes capture sources with embedded audio, not just explicitly named microphones.
     if(!/audio|capture|avcapture|ffmpeg|vlc|browser/.test(input.kind)) continue;
     let mute:Record<string,any>;
     try { mute=await reader.read('GetInputMute',{inputName:input.name}); } catch { continue; }
@@ -56,16 +56,31 @@ export async function inspectObs(reader: Reader): Promise<Inventory> {
   return {origin:'live',collection:text(collections.currentSceneCollectionName),scenes:names,
     inputs:inputList,nodes,audio,warnings,capturedAt:new Date().toISOString()};
 }
+/** Connection health and optional capability queries are separate concerns. */
 export async function readTransport(reader:Reader): Promise<TransportState> {
-  const [stream,record,virtual,replay,studio,scenes,collection]=await Promise.all([
-    reader.read('GetStreamStatus'),reader.read('GetRecordStatus'),reader.read('GetVirtualCamStatus'),
-    reader.read('GetReplayBufferStatus'),reader.read('GetStudioModeEnabled'),reader.read('GetSceneList'),reader.read('GetSceneCollectionList'),
-  ]);
-  const flag=(v:unknown)=>typeof v==='boolean'?v:null;
-  return {connected:true,streaming:flag(stream.outputActive),recording:flag(record.outputActive),
-    virtualCamera:flag(virtual.outputActive),replayBuffer:flag(replay.outputActive),studio:flag(studio.studioModeEnabled),
-    preview:text(scenes.currentPreviewSceneName),program:text(scenes.currentProgramSceneName),
-    collection:text(collection.currentSceneCollectionName)};
+  // A real request/response establishes liveness; optional output failures must not masquerade as bad credentials.
+  await reader.read('GetVersion');
+  const requests:ReadRequest[]=['GetStreamStatus','GetRecordStatus','GetVirtualCamStatus',
+    'GetReplayBufferStatus','GetStudioModeEnabled','GetSceneList','GetSceneCollectionList'];
+  const results=await Promise.allSettled(requests.map(name=>reader.read(name)));
+  const statusWarnings:string[]=[];
+  const values=results.map((result,index):Record<string,any>=>{
+    if(result.status==='fulfilled')return object(result.value);
+    statusWarnings.push(requestFailure(result.reason,requests[index]).message);
+    return {};
+  });
+  const flag=(index:number,key:string):boolean|null=>{
+    const value=values[index][key];
+    if(typeof value==='boolean')return value;
+    if(results[index].status==='fulfilled')statusWarnings.push(`OBS ${requests[index]} returned no valid ${key}; status is unknown.`);
+    return null;
+  };
+  const collection=text(values[6].currentSceneCollectionName);
+  if(!collection && results[6].status==='fulfilled')statusWarnings.push('OBS scene collection is unknown; Preview rehearsal is blocked.');
+  return {connected:true,streaming:flag(0,'outputActive'),recording:flag(1,'outputActive'),
+    virtualCamera:flag(2,'outputActive'),replayBuffer:flag(3,'outputActive'),studio:flag(4,'studioModeEnabled'),
+    preview:text(values[5].currentPreviewSceneName),program:text(values[5].currentProgramSceneName),
+    collection,statusWarnings};
 }
 export function assertPreviewSafe(state:TransportState, collection:string): void {
   if(!state.connected || !collection || state.collection!==collection) throw new Error('Connect and inspect the expected OBS scene collection first.');

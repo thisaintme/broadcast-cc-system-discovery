@@ -35,6 +35,8 @@ jobs:
         run: npm run build
       - name: Smoke-test Electron startup and rehearsal
         run: ./node_modules/.bin/electron scripts/smoke.cjs
+      - name: Smoke-test authenticated OBS connection and password retry
+        run: ./node_modules/.bin/electron scripts/smoke-obs.cjs
       - name: Build universal Mac app
         run: npm run dist:mac
       - name: Upload Mac app and resolved dependency lock
@@ -46,4 +48,5 @@ jobs:
             apps/control-center/release/*.zip
             apps/control-center/package-lock.json
             apps/control-center/release/smoke-test.png
+            apps/control-center/release/obs-connection-smoke.png
           if-no-files-found: error
