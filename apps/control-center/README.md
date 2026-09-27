@@ -1,52 +1,45 @@
 # Broadcast Control Center Preview
 
-## Alpha.3 — offline Program and caption rehearsal
+## Alpha.4 — read-only audio verification
 
-This is NOT a live-service controller. The existing System Discovery app remains separate and unchanged. The packaged universal macOS DMG/ZIP includes its runtime; Node/npm are not required on the church Mac.
+A new **Audio verification** sidebar screen adds live per-input/channel peaks, mute/volume/track/monitor/activity readings, stale/disconnected indicators, and explicitly saved operator routing observations. No audio control commands have been added.
 
-### Three modes
+**Start here:** [Audio verification instructions](docs/AUDIO-VERIFICATION.md).
 
-- **Simulation** is the default. No device writes.
-- **OBS Preview** selects mapped Preview scenes only. It does not edit captions and retains the alpha.2 requirement that every checked output is explicitly off and Studio Mode on.
-- **Offline Program & captions** changes real Program scenes, Bible-reference text, next-service text and a reviewed pool of speaker-name visibility items. It requires a separately inspected, duplicated test collection whose name starts `BCC TEST`, confirmation of mappings, an explicit native consent dialog and fresh output checks before each write.
+Install the universal macOS DMG from the **Control Center Preview - macOS** Actions workflow. The artifact is `Broadcast-Control-Center-Preview-macOS`; the DMG is inside its `release/` folder. The packaged app includes its runtime: no Node/npm installation on the church Mac. It remains unsigned/not notarized; do not disable Gatekeeper globally.
 
-No stream start/stop, audio mute/fader/track, PTZ, RODE switching, X32, or YouTube API commands exist. Scene changes can nonetheless activate the media/audio already configured in a scene. Stop external encoders and disable automation yourself; OBS built-in output checks do not cover other equipment, plugins or projectors.
+Existing services/speakers and caption mappings remain compatible. Audio observation requires only the existing OBS connection and an idle Simulation session; it does not require a new discovery report, Companion, a test-collection name or caption confirmation. It does not play/record audio. Saved notes are historical operator statements; telemetry and credentials are not saved. Export the workspace after explicitly saving observations.
 
-## First run / upgrade
+## Existing alpha.3 modes remain
 
-1. Quit the previous Preview app. Install the alpha.3 DMG as **Broadcast Control Center Preview** in Applications. Existing local services/speakers are retained; old workspace files gain empty caption mappings. No control authorization survives an import or restart.
-2. In OBS, back up your working scene collection and use Scene Collection → Duplicate. Name the copy `BCC TEST` or `BCC TEST - rehearsal`. Do not rename the production collection instead of duplicating it. Select the copy in OBS and stop all outputs. Disable external automated transitions and encoders.
-3. Open Connections & mappings in the app. Import your existing workspace only if it is not already loaded. Keep it out of the public repository.
-4. Connect & inspect OBS again. The current password is used only for the connection; failures retain it for retry, success clears it. Inspect the selected test collection, not the production collection.
-5. Review all five scene roles. Choose the Bible-reference and next-service text sources that have enabled paths in their scenes.
-6. In **Offline Program & speaker-name mapping**, enter the exact test-collection name and choose the group containing the existing speaker-name text inputs. Review every text item in the displayed pool: these will be treated as mutually exclusive names. Images/audio/group items are not included. Select each person's source; an unmapped person is refused, never substituted.
-7. Click **I reviewed the pool — confirm scene & caption mappings**. This saves metadata only.
-8. In Service rehearsal, select a service and choose **Enable offline Program & captions…**. Read and confirm the native dialog. Run Prepare → Intro → Main → Speaker/Bible → Outro while watching OBS.
+- **Simulation** is default. No device writes.
+- **OBS Preview** selects mapped Preview scenes only. It does not edit captions; checked outputs must explicitly be off and Studio Mode on.
+- **Offline Program & captions** changes real Program scenes, Bible-reference text, next-service text and a reviewed pool of speaker-name visibility items. This still requires a live-inspected, duplicated collection named `BCC TEST` or `BCC TEST - a description`, confirmation of mappings, a native consent dialog and fresh output checks before each mutation.
 
-Prepare verifies mappings and writes the next-service date. The next entry is chronological, not necessarily next Sunday. Dates use Europe/Berlin. With no later entry, the caption is `Nächster Termin folgt.`. Text changes use an overlay containing only `text`; fonts and unrelated settings are not reset. File-backed or unverified text sources are refused.
+The System Discovery application and main branch remain separate from this open PR. No YouTube, stream start/stop, mute/fader/track, PTZ, RODE switching or X32 commands exist in the Preview. Scene changes can still activate media/audio already present. Stop external encoders and disable external automation before any offline-control rehearsal.
 
-Speaker display resolves item IDs live, disables other reviewed text names and enables the selected one. The containing group, icons, camera sources and audio are left alone. Bible display updates only its text, not the group. The ten-second return starts after Program readback confirms the target scene.
+## Offline caption rehearsal
 
-**Cancel / return to Simulation** also cancels an in-flight command. Completed edits remain in the test collection. There is no automatic rollback, scene restoration, output shutdown or replay of commands after reconnect. A partial failure can leave some text/visibility edits completed; inspect the test collection before retrying.
+1. Back up and duplicate the production OBS scene collection. Name the **copy** `BCC TEST`, select it, and stop all outputs. Do not rename the production collection instead of duplicating it.
+2. Connect & inspect OBS again in Connections & mappings. Review the five scene roles and the Bible/next-service text sources.
+3. Under Offline Program & speaker-name mapping, enter the exact test-collection name and choose the group of speaker-name text inputs. Review every item in the mutually exclusive text pool and each speaker's source.
+4. Click **I reviewed the pool — confirm scene & caption mappings**. Saving metadata alone does not operate OBS.
+5. Select a service in Service rehearsal, click **Enable offline Program & captions…** and confirm the native dialog. Run Prepare → Intro → Main → Speaker/Bible → Outro while watching OBS. The app panel is not a live video preview.
 
-## Safety limits and diagnostics
+Prepare verifies mappings and writes the next chronological service date (Europe/Berlin), or `Nächster Termin folgt.` when none exists. Text changes overlay only `text`, leaving fonts/styles intact. File-backed/unverified text is refused. Speaker selection resolves IDs live, disables other reviewed name text items and enables the chosen one, leaving groups/icons/audio/cameras untouched. Ten-second returns start after Program readback.
 
-Streaming and recording must explicitly report off. For offline Program mode only, a 604 response from the exact GetReplayBufferStatus or GetVirtualCamStatus handler is recorded as an absent resource, separately from unknown. Their boolean value remains null. Unsupported requests, malformed flags, timeouts, other errors and stream/record failures remain blocking. The basis is OBS's official output-handler implementation, where those two requests return 604 when their output object does not exist. Queries are repeated before every mutation.
+Cancel/reset can interrupt pending commands. Completed edits remain in the test collection; there is no automatic rollback, scene restoration, output shutdown or replay on reconnect. Imports/restarts never retain control authorization. Inspect OBS after a partial failure.
 
-There is no atomic interlock with another controller. A remote operator can change state between a read and a write. Use this milestone only in an isolated offline rehearsal. Unexpected Program changes, relevant configuration events, disconnection or output-state changes cancel pending actions. Safe errors retain request names/codes, never raw upstream payloads.
+Streaming and recording must explicitly report off. Only exact 604 replies from the virtual-camera/replay-buffer status handlers are classified as absent optional resources for offline mode; boolean state remains null. Other uncertainty blocks writes. Preview-only mode keeps all-false requirements. These checks cannot atomically exclude another controller, external encoder, projector or plugin.
 
-The renderer remains isolated and sandboxed, with no Node access. IPC is sender-validated and offers semantic commands only. Device URLs are localhost-only. Import/export projects known fields and cannot execute Companion actions. Workspace data is a versioned local JSON file, not SQLite yet; logs are session-only. The package is unsigned/not notarized. Do not disable Gatekeeper globally.
+## Architecture and tests
 
-## Development / validation
+Electron + React + TypeScript; main-process state/timers; direct OBS adapter; read-only Companion export metadata. Sandboxed/isolated renderer, bundled-only protocol, sender-validated narrow IPC, localhost endpoints. Workspace persistence is local JSON with atomic replacement, not SQLite yet. Activity logs are session-only.
 
-CI uses Node 24 and pinned direct dependencies. Run `npm install`, `npm run typecheck`, `npm test`, `npm run build`. `npm run dist:mac` builds the universal package. The resolved package-lock is included in the CI artifact; a reviewed committed lockfile remains necessary before production distribution.
+CI uses Node 24 and pinned direct dependencies. Run `npm install`, `npm run typecheck`, `npm test`, `npm run build`; `npm run dist:mac` packages DMG/ZIP. The resolved dependency lock, package checksums, commit identity and smoke-test images accompany CI artifacts. A reviewed committed lockfile is still required before production distribution.
 
-Tests use invented scene names, a simulated clock and an authenticated synthetic WebSocket peer on a random loopback port. No test contacts church equipment. The suite retains alpha.2 authentication/inspection regressions and adds real adapter coverage for offline caption/Program writes, readback, cancellation, partial failures, unmapped speakers, changed groups, file-backed text, saved authorization and output checks. Passing CI is not physical-hardware acceptance.
+Synthetic tests cover authentication, optional statuses, safe diagnostics, timers, caption writes/readback, cancellation, workspace projection and the new read-only meter/observation behavior. Electron smoke tests cover startup, password retries, captions and audio UI. Passing CI is not hardware acceptance. The operator reported the alpha.3 offline acceptance tests passed; alpha.4 needs its own on-site audio observation.
 
-Primary protocol references:
-- https://github.com/obsproject/obs-websocket/blob/master/docs/generated/protocol.md
-- https://github.com/obsproject/obs-websocket/blob/master/src/requesthandler/RequestHandler_Outputs.cpp
+## Not yet included
 
-## Not included
-
-YouTube scheduling/OAuth/start/stop; German/Russian dual-encoder operation; broadcast-audio automation; camera switching/tracking; Bible text and verse validation; persistent operational logging; production recovery; signing/notarization. The global OBS state label reports OBS only, not verified YouTube or external-encoder state.
+YouTube scheduling/OAuth/encoder start-stop; German/Russian dual encoder operation; automatic broadcast-audio policy; camera switching/tracking; Bible text/verse validation; durable operational logging; production recovery; signing/notarization. Global OBS status is not verified YouTube/external-encoder status.

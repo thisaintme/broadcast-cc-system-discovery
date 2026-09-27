@@ -1,12 +1,14 @@
-import OBSWebSocket from 'obs-websocket-js/json';
+import OBSWebSocket,{EventSubscription} from 'obs-websocket-js/json';
 import {disconnected} from './model.ts';
 import type {CaptionWrite,PreviewPort,ReadRequest,Role,TransportState,Workspace} from './model.ts';
 import {localEndpoint} from './workspace.ts';
 import {assertPreviewSafe,readTransport} from './inspect.ts';
 import {executeOffline,offlineOutputsOff} from './offline.ts';
 import {connectionFailure,requestFailure,ObsFailure} from './obs-errors.ts';
+import {AudioMonitor} from './audio-monitor.ts';
 type Expected<T>={value:T;until:number};
 export class ObsAdapter implements PreviewPort {
+  readonly audio=new AudioMonitor();
   private socket:OBSWebSocket|null=null;
   private authenticated=false;
   private live=disconnected();
@@ -28,11 +30,11 @@ export class ObsAdapter implements PreviewPort {
     const socket=new OBSWebSocket();this.socket=socket;
     const unsafe=(reason:string)=>{if(this.socket===socket){this.epoch++;this.onUnsafe(reason);}};
     socket.on('ConnectionClosed',()=>{
-      if(this.socket!==socket)return;this.authenticated=false;this.live=disconnected();
+      if(this.socket!==socket)return;this.authenticated=false;this.live=disconnected();this.audio.detach();
       if(this.interval)clearInterval(this.interval);this.interval=null;
       unsafe('OBS disconnected; all pending rehearsal actions cancelled.');this.onState();
     });
-    socket.on('ConnectionError',()=>unsafe('OBS connection error; rehearsal disarmed.'));
+    socket.on('ConnectionError',()=>{if(this.socket===socket)this.audio.detach();unsafe('OBS connection error; rehearsal disarmed.');});
     socket.on('CurrentPreviewSceneChanged',event=>{
       if(this.socket!==socket)return;
       const expected=this.expectedPreview;
@@ -53,17 +55,30 @@ export class ObsAdapter implements PreviewPort {
       else unsafe('OBS source visibility changed externally; inspect before continuing.');
     });
     socket.on('InputSettingsChanged',event=>{
-      // Unrelated countdown/transcription text can legitimately update continuously.
       if(this.socket!==socket||!this.watchedText.has(event.inputName))return;
       if(this.expected(this.expectedText.get(event.inputName),String(event.inputSettings?.text)))this.expectedText.delete(event.inputName);
       else unsafe('A controlled OBS caption changed externally; pending actions cancelled.');
     });
     const events=['CurrentSceneCollectionChanging','CurrentSceneCollectionChanged','SceneListChanged','SceneItemCreated','SceneItemRemoved','SceneItemListReindexed','InputNameChanged','InputRemoved','InputCreated','CurrentProfileChanging','StudioModeStateChanged','StreamStateChanged','RecordStateChanged','VirtualcamStateChanged','ReplayBufferStateChanged'] as const;
     for(const event of events)socket.on(event,()=>unsafe('OBS configuration or output state changed; rehearsal disarmed.'));
+    const audioEvents=['InputVolumeMeters','InputMuteStateChanged','InputVolumeChanged','InputAudioTracksChanged','InputAudioMonitorTypeChanged','InputActiveStateChanged','CurrentSceneCollectionChanging','CurrentSceneCollectionChanged','InputCreated','InputRemoved','InputNameChanged','CurrentProfileChanging'] as const;
+    for(const event of audioEvents)socket.on(event,payload=>{if(this.socket===socket&&this.authenticated)this.audio.event(event,payload);});
     try{await this.deadline(socket.connect(endpoint,password||undefined,{rpcVersion:1}),8000);}
     catch(error){if(this.socket===socket)await this.disconnect();throw connectionFailure(error,endpoint);}
     if(this.socket!==socket)throw new ObsFailure('OBS connection attempt was cancelled.');
-    this.authenticated=true;this.live={...disconnected(),connected:true};this.onState();await this.refresh();
+    this.authenticated=true;
+    this.audio.attach({
+      read:async(name,data)=>{
+        if(this.socket!==socket||!this.authenticated)throw new Error('OBS audio session is disconnected.');
+        return await socket.call(name,data as never) as Record<string,unknown>;
+      },
+      subscribe:async enabled=>{
+        if(this.socket!==socket||!this.authenticated)throw new Error('OBS audio session is disconnected.');
+        // Subscription changes only: retain every normal event used by the accepted controller.
+        await this.deadline(socket.reidentify({eventSubscriptions:EventSubscription.All|(enabled?EventSubscription.InputVolumeMeters|EventSubscription.InputActiveStateChanged:0)}),1800);
+      },
+    });
+    this.live={...disconnected(),connected:true};this.onState();await this.refresh();
     if(this.socket===socket&&this.authenticated)this.interval=setInterval(()=>{void this.refresh().catch(()=>{});},2500);
   }
   async read(name:ReadRequest,data:Record<string,unknown>={}):Promise<Record<string,any>>{
@@ -134,6 +149,7 @@ export class ObsAdapter implements PreviewPort {
     }catch(error){throw requestFailure(error,name);}
   }
   async disconnect():Promise<void>{
+    this.audio.detach();
     if(this.interval)clearInterval(this.interval);this.interval=null;this.epoch++;
     const old=this.socket;this.socket=null;this.authenticated=false;this.live=disconnected();this.expectedPreview=null;this.expectedProgram=null;this.expectedText.clear();this.expectedItems.clear();this.watchedText.clear();
     if(old)try{await this.deadline(old.disconnect(),1000);}catch{/* Never stop outputs or restore scene state. */}this.onState();

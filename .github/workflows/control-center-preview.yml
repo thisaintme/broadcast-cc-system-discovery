@@ -39,6 +39,8 @@ jobs:
         run: ./node_modules/.bin/electron scripts/smoke-obs.cjs
       - name: Smoke-test offline Program and captions against synthetic OBS
         run: ./node_modules/.bin/electron scripts/smoke-offline.cjs
+      - name: Smoke-test read-only audio verification and routing notes
+        run: ./node_modules/.bin/electron scripts/smoke-audio.cjs
       - name: Build universal Mac app
         run: npm run dist:mac
       - name: Record build identity and package checksums
@@ -56,6 +58,7 @@ jobs:
             apps/control-center/release/smoke-test.png
             apps/control-center/release/smoke-obs.png
             apps/control-center/release/smoke-offline.png
+            apps/control-center/release/smoke-audio.png
             apps/control-center/release/BUILD-COMMIT.txt
             apps/control-center/release/SHA256SUMS.txt
           if-no-files-found: error

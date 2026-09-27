@@ -1,5 +1,6 @@
 import {blankWorkspace,blankBindings,blankCaptions,ROLES} from './model.ts';
 import type {Workspace,Inventory,SceneNode,Connection,Bindings,SourceCandidate} from './model.ts';
+import {normalizeAudioObservations} from './audio-model.ts';
 export const object=(x:unknown):Record<string,any>=>x && typeof x==='object' && !Array.isArray(x)?x as Record<string,any>:{};
 export const text=(x:unknown,limit=240):string=>typeof x==='string'?x.replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f]/g,'').slice(0,limit):'';
 const array=(x:unknown):any[]=>Array.isArray(x)?x.slice(0,1000):[];
@@ -81,6 +82,7 @@ export function validateWorkspace(raw:unknown,imported=false):Workspace{
   w.captions.speakerSources=Object.fromEntries(w.speakers.map(n=>[n,text(object(c.speakerSources)[n])]));
   w.captions.confirmed=!imported&&c.confirmed===true;
   for(const key of ['frontInput','sideInput','audioRoute'] as const)w.hardwareNotes[key]=text(object(r.hardwareNotes)[key],800);
+  w.audioObservations=normalizeAudioObservations(r.audioObservations);
   return w;
 }
 export function candidates(i:Inventory|null,scene:string):SourceCandidate[]{

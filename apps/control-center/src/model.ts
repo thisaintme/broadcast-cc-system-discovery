@@ -1,4 +1,5 @@
 /** Shared contracts. Credentials and raw device configuration are never workspace fields. */
+import type {AudioObservation,AudioSnapshot} from './audio-model.ts';
 export const ROLES = ['intro', 'main', 'speaker', 'bible', 'outro'] as const;
 export type Role = typeof ROLES[number];
 export type Phase = 'idle' | 'prepared' | Role;
@@ -28,12 +29,13 @@ export interface Workspace {
   inventory:Inventory|null; connections:Connection[]; bindings:Bindings;
   captions:CaptionBindings; services:Service[]; speakers:string[];
   hardwareNotes:{frontInput:string;sideInput:string;audioRoute:string};
+  /** Historical operator statements, not detected routing or permission to control audio. */
+  audioObservations:AudioObservation[];
 }
 export interface TransportState {
   connected:boolean; streaming:boolean|null; recording:boolean|null;
   virtualCamera:boolean|null; replayBuffer:boolean|null; studio:boolean|null;
   program:string; preview:string; collection:string; statusWarnings?:string[];
-  /** Explicit resource-unavailable replies, not timeouts or unsupported requests. Values remain null. */
   unavailableOutputs?:('virtualCamera'|'replayBuffer')[];
 }
 export interface EventEntry { at:string; message:string }
@@ -47,7 +49,7 @@ export const blankBindings=():Bindings=>({scenes:{intro:'',main:'',speaker:'',bi
 export const blankWorkspace=():Workspace=>({
   format:'broadcast-cc-workspace',version:1,obsUrl:'ws://127.0.0.1:4455',companionUrl:'http://127.0.0.1:8000',
   inventory:null,connections:[],bindings:blankBindings(),captions:blankCaptions(),services:[],speakers:[],
-  hardwareNotes:{frontInput:'',sideInput:'',audioRoute:''},
+  hardwareNotes:{frontInput:'',sideInput:'',audioRoute:''},audioObservations:[],
 });
 export const disconnected=():TransportState=>({connected:false,streaming:null,recording:null,virtualCamera:null,replayBuffer:null,studio:null,program:'',preview:'',collection:'',statusWarnings:[],unavailableOutputs:[]});
 export type ReadRequest =
@@ -68,4 +70,7 @@ export interface Bridge {
   saveWorkspace(workspace:Workspace):Promise<Snapshot>; inspect(password:string):Promise<Snapshot>;
   companion():Promise<Snapshot>; mode(mode:Mode):Promise<Snapshot>;
   command(command:string,value?:string):Promise<Snapshot>; onState(callback:(state:Snapshot)=>void):()=>void;
+  audioSnapshot():Promise<AudioSnapshot>; audioControl(action:'start'|'stop'):Promise<AudioSnapshot>;
+  saveAudioObservation(observation:AudioObservation):Promise<Snapshot>;
+  onAudio(callback:(state:AudioSnapshot)=>void):()=>void;
 }

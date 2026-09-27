@@ -5,6 +5,7 @@ import {readFile,stat,writeFile} from 'node:fs/promises';
 import {blankWorkspace} from './model.ts';
 import type {Workspace,Snapshot,Mode} from './model.ts';
 import {validateWorkspace,importWorkspace,text,selectService,suggestBindings} from './workspace.ts';
+import {normalizeAudioObservations} from './audio-model.ts';
 import {inspectObs} from './inspect.ts';
 import {assertOfflineSafe} from './offline.ts';
 import {inspectCompanion} from './companion.ts';
@@ -21,6 +22,8 @@ const state=():Snapshot=>({version:app.getVersion(),workspace,runtime:{...rehear
 function emit():void{if(window&&!window.isDestroyed())window.webContents.send('cc:state',state());}
 const store=()=>path.join(app.getPath('userData'),'workspace.json');
 obs.onState=emit;
+// Meter samples have a separate bounded-rate channel, never repeated full workspace snapshots.
+obs.audio.onUpdate=()=>{if(window&&!window.isDestroyed())window.webContents.send('cc:audio',obs.audio.snapshot());};
 obs.onUnsafe=reason=>{
   if(rehearsal.runtime.mode!=='simulation'){
     workspace.bindings.confirmed=false;workspace.captions.confirmed=false;rehearsal.interrupt(reason);
@@ -35,10 +38,11 @@ function editable():void{
 function handle(name:string,action:(...args:any[])=>Promise<unknown>):void{
   ipcMain.handle(name,async(event,...args)=>{
     validSender(event);
-    // Cancellation must remain reachable while an earlier request is awaiting OBS.
     if(name==='cc:command'&&args[0]==='reset'){
       await rehearsal.command('reset');return state();
     }
+    // Stopping read-only observation is available even during an outstanding read.
+    if(name==='cc:audio-control'&&args[0]==='stop'){await obs.audio.stop();return obs.audio.snapshot();}
     if(busy)throw new Error('Setup is already busy.');busy=true;emit();
     try{return await action(...args);}finally{busy=false;emit();}
   });
@@ -55,7 +59,7 @@ async function importFile():Promise<Snapshot>{
 }
 app.whenReady().then(async()=>{
   protocol.handle('bcc',async(request)=>{
-    const url=new URL(request.url),files:Record<string,string>={'/index.html':'text/html','/renderer.js':'text/javascript','/styles.css':'text/css'};
+    const url=new URL(request.url),files:Record<string,string>={'/index.html':'text/html','/renderer.js':'text/javascript','/styles.css':'text/css','/audio.css':'text/css'};
     if(url.host!=='app'||!files[url.pathname])return new Response('Not found',{status:404});
     const body=await readFile(path.join(__dirname,'renderer',url.pathname.slice(1)));
     return new Response(new Uint8Array(body),{headers:{'Content-Type':files[url.pathname]}});
@@ -65,10 +69,26 @@ app.whenReady().then(async()=>{
   try{workspace=await loadWorkspace(store());}catch{rehearsal.log('Saved workspace could not be read. It has not been overwritten. Import a valid workspace to recover.');}
   rehearsal.runtime.selectedService=selectService(workspace);
   ipcMain.handle('cc:snapshot',event=>{validSender(event);return state();});
+  ipcMain.handle('cc:audio-snapshot',event=>{validSender(event);return obs.audio.snapshot();});
+  handle('cc:audio-control',async(action:unknown)=>{
+    if(action!=='start')throw new Error('Unknown audio observation action.');
+    editable();await obs.audio.start();rehearsal.log('Read-only audio observation started. No audio settings changed.');return obs.audio.snapshot();
+  });
+  handle('cc:audio-note',async(raw:unknown)=>{
+    editable();const note=normalizeAudioObservations([raw])[0],audio=obs.audio.snapshot();
+    if(!note||!audio.connected||note.collection!==audio.collection||!audio.rows.some(r=>r.name===note.inputName))throw new Error('Start audio observation for this input before saving a routing note.');
+    note.updatedAt=new Date().toISOString();
+    const notes=workspace.audioObservations.filter(n=>n.collection!==note.collection||n.inputName!==note.inputName);
+    const next={...workspace,audioObservations:normalizeAudioObservations([...notes,note])};
+    await saveWorkspace(store(),next);workspace=next;
+    rehearsal.log('Operator audio observation saved locally. Routing and control remain unverified.');return state();
+  });
   handle('cc:import',importFile);
   handle('cc:save-workspace',async(raw:unknown)=>{
     editable();const next=validateWorkspace(raw);
     next.inventory=workspace.inventory;next.connections=workspace.connections;
+    // Audio notes have their own explicit save action; other edits cannot overwrite a newer note.
+    next.audioObservations=workspace.audioObservations;
     if(next.obsUrl!==workspace.obsUrl){await obs.disconnect();next.bindings.confirmed=false;next.captions.confirmed=false;}
     if(next.captions.confirmed&&(next.inventory?.origin!=='live'||next.captions.testCollection!==next.inventory.collection))throw new Error('Inspect the selected test collection before confirming captions.');
     await saveWorkspace(store(),next);workspace=next;
@@ -95,18 +115,16 @@ app.whenReady().then(async()=>{
   handle('cc:mode',async(mode:Mode)=>{
     if(!['simulation','obs-preview','offline-program'].includes(mode))throw new Error('Unknown mode.');
     if(mode!=='simulation'){
-      editable();if(workspace.inventory?.origin!=='live')throw new Error('Inspect OBS in this session before enabling controls.');
-      await obs.refresh();
-      if(mode==='offline-program')assertOfflineSafe(obs.state(),workspace);
+      editable();await obs.audio.stop('Meters stopped before rehearsal. No audio setting changed.');
+      if(workspace.inventory?.origin!=='live')throw new Error('Inspect OBS in this session before enabling controls.');
+      await obs.refresh();if(mode==='offline-program')assertOfflineSafe(obs.state(),workspace);
       const offline=mode==='offline-program';
       const consent=await dialog.showMessageBox(window!,{type:'warning',buttons:['Cancel',offline?'Enable offline Program & captions':'Enable OBS Preview rehearsal'],defaultId:0,cancelId:0,
         message:offline?'Allow real changes in your BCC TEST collection?':'Allow changes to OBS Preview?',
         detail:offline?
           'Use a DUPLICATED and backed-up BCC TEST collection, outside any service. This changes real Program scenes, caption text, and reviewed speaker-name visibility, including timed returns. Changes remain after reset/exit. Scene changes may activate media/audio already present. No mute/fader, streaming, camera or switcher commands are sent. Stop external encoders and disable automation manually: only OBS built-in outputs can be checked. I have prepared this isolated test setup.':
           'Use outside a service. Studio Mode must be on and all checked outputs off. Only Preview scenes change. Text remains simulated. Disable external automation that could transition Preview to Program.'});
-      if(consent.response!==1)return state();
-      // Refresh after the dialog as well; time spent confirming never authorizes stale state.
-      await obs.refresh();
+      if(consent.response!==1)return state();await obs.refresh();
     }
     await rehearsal.setMode(mode);return state();
   });
@@ -118,7 +136,7 @@ app.whenReady().then(async()=>{
     const pick=await dialog.showSaveDialog(window!,{title:'Export local workspace (contains site names and addresses)',defaultPath:'broadcast-cc-workspace.json',filters:[{name:'JSON',extensions:['json']}]});
     if(pick.canceled||!pick.filePath)return 'Export cancelled.';
     await writeFile(pick.filePath,JSON.stringify(validateWorkspace(workspace,true),null,2)+'\n',{encoding:'utf8',mode:0o600});
-    return 'Workspace exported without credentials or control authorization. Review site names and addresses before sharing.';
+    return 'Workspace exported with operator audio notes, without live meter samples, credentials or control authorization. Review site names and addresses before sharing.';
   });
   createWindow();app.on('activate',()=>{if(!window)createWindow();});
 });
