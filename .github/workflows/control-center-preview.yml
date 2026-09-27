@@ -37,8 +37,14 @@ jobs:
         run: ./node_modules/.bin/electron scripts/smoke.cjs
       - name: Smoke-test authenticated OBS connection and password retry
         run: ./node_modules/.bin/electron scripts/smoke-obs.cjs
+      - name: Smoke-test offline Program and captions against synthetic OBS
+        run: ./node_modules/.bin/electron scripts/smoke-offline.cjs
       - name: Build universal Mac app
         run: npm run dist:mac
+      - name: Record build identity and package checksums
+        run: |
+          echo "$GITHUB_SHA" > release/BUILD-COMMIT.txt
+          shasum -a 256 release/*.dmg release/*.zip > release/SHA256SUMS.txt
       - name: Upload Mac app and resolved dependency lock
         uses: actions/upload-artifact@v4
         with:
@@ -48,5 +54,8 @@ jobs:
             apps/control-center/release/*.zip
             apps/control-center/package-lock.json
             apps/control-center/release/smoke-test.png
-            apps/control-center/release/obs-connection-smoke.png
+            apps/control-center/release/smoke-obs.png
+            apps/control-center/release/smoke-offline.png
+            apps/control-center/release/BUILD-COMMIT.txt
+            apps/control-center/release/SHA256SUMS.txt
           if-no-files-found: error
