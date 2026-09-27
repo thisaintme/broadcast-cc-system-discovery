@@ -11,6 +11,7 @@ interface Row {
   name:string;kind:string;candidate:boolean;channels:AudioChannel[];sampleAt:number|null;sampleKind:'waiting'|'live'|'not-reporting'|'invalid';
   muted:Field<boolean>;volumeDb:Field<number>;tracks:Field<Record<string,boolean>>;monitor:Field<string>;active:Field<boolean>;
 }
+class AudioReadFailure extends Error {}
 const field=<T>():Field<T>=>({value:null,at:null,revision:0});
 const object=(v:unknown):Record<string,unknown>=>v!==null&&typeof v==='object'&&!Array.isArray(v)?v as Record<string,unknown>:{};
 const name=(v:unknown)=>typeof v==='string'&&v.length>0&&v.length<=240?v:'';
@@ -20,7 +21,7 @@ const tracks=(raw:unknown):Record<string,boolean>|null=>{
   for(let i=1;i<=6;i++){const key=String(i);if(typeof r[key]!=='boolean')return null;out[key]=r[key] as boolean;}
   return out;
 };
-const monitor=(v:unknown)=>['OBS_MONITORING_TYPE_NONE','OBS_MONITORING_TYPE_MONITOR_ONLY','OBS_MONITORING_TYPE_MONITOR_AND_OUTPUT'].includes(String(v))?String(v):null;
+const monitor=(v:unknown)=>typeof v==='string'&&['OBS_MONITORING_TYPE_NONE','OBS_MONITORING_TYPE_MONITOR_ONLY','OBS_MONITORING_TYPE_MONITOR_AND_OUTPUT'].includes(v)?v:null;
 const requestCode=(e:unknown)=>{const code=object(e).code;return typeof code==='number'&&Number.isInteger(code)&&code>=0&&code<5000?` (code ${code})`:'';};
 /** A separate observer; it cannot select a scene, change gain/mute, or start an output. */
 export class AudioMonitor {
@@ -67,9 +68,9 @@ export class AudioMonitor {
       const [list,collection]=await Promise.all([this.query(session,'GetInputList'),this.query(session,'GetSceneCollectionList')]);
       if(!valid())return;
       const collectionName=name(collection.currentSceneCollectionName);
-      if(!collectionName||!Array.isArray(list.inputs))throw new Error('OBS audio inventory is unavailable. Connect & inspect OBS again.');
+      if(!collectionName||!Array.isArray(list.inputs))throw new AudioReadFailure('OBS audio inventory is unavailable. Connect & inspect OBS again.');
       this.collection=collectionName;
-      if(list.inputs.length>256)throw new Error('OBS audio observation is limited to 256 inputs. No settings changed.');
+      if(list.inputs.length>256)throw new AudioReadFailure('OBS audio observation is limited to 256 inputs. No settings changed.');
       for(const raw of list.inputs){
         const item=object(raw),inputName=name(item.inputName),kind=name(item.inputKind);if(!inputName||this.rows.has(inputName))continue;
         this.rows.set(inputName,{name:inputName,kind,candidate:/audio|capture|ffmpeg|vlc|browser/.test(kind),channels:[],sampleAt:null,sampleKind:'waiting',
@@ -85,7 +86,7 @@ export class AudioMonitor {
       this.starting=false;this.onUpdate();this.schedule(token);
     }catch(error){
       if(!valid())return;
-      this.halt(error instanceof Error&&error.message.startsWith('OBS audio')?error.message:'Audio observation could not start. Reconnect OBS and retry.');
+      this.halt(error instanceof AudioReadFailure?error.message:'Audio observation could not start. Reconnect OBS and retry.');
       try{await this.timeout(session.subscribe(false));}catch{}
       throw new Error(this.message);
     }
@@ -182,7 +183,7 @@ export class AudioMonitor {
     return {connected,running:this.running,starting:this.starting,collection:this.collection,program:this.program,message:this.message,generatedAt:Date.now(),meterEventAgeMs:age(now,this.eventAt),rows};
   }
   private async query(session:AudioSession,request:AudioRead,data?:Record<string,unknown>):Promise<Record<string,unknown>>{
-    try{return await this.timeout(session.read(request,data));}catch(error){throw new Error(`OBS audio ${request} unavailable${requestCode(error)}.`);}
+    try{return await this.timeout(session.read(request,data));}catch(error){throw new AudioReadFailure(`OBS audio ${request} unavailable${requestCode(error)}.`);}
   }
   private async timeout<T>(promise:Promise<T>):Promise<T>{
     let timer:ReturnType<typeof setTimeout>|undefined;

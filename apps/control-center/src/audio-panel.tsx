@@ -35,6 +35,8 @@ export function AudioPanel({api,s}:{api:Bridge;s:Snapshot}){
   },[api]);
   const editable=s.runtime.mode==='simulation'&&s.runtime.phase==='idle'&&!s.runtime.busy;
   const fresh=now-received<=2500&&s.transport.connected&&audio.connected;
+  // Historical observations remain editable after Stop; telemetry freshness does not authorize these notes.
+  const notesEditable=editable&&audio.connected&&s.transport.connected;
   async function control(action:'start'|'stop'){
     setPending(true);setError('');try{const value=await api.audioControl(action);setAudio(value);setReceived(Date.now());}catch(e){setError(errorText(e));}finally{setPending(false);}
   }
@@ -57,7 +59,7 @@ export function AudioPanel({api,s}:{api:Bridge;s:Snapshot}){
         <h2>{row.name}</h2><small>{row.kind}</small><p className="meter-state">{label}</p>
         {live?row.channels.map((channel,index)=><div className="audio-channel" key={index}><strong>Channel {index+1}</strong><div className="audio-meter-line"><span>Incoming peak</span><meter aria-label={`${row.name} channel ${index+1} incoming peak`} min={-100} max={0} value={Math.min(0,channel.inputPeakDb)}/><output>{db(channel.inputPeakDb)}</output></div><div className="audio-meter-line"><span>After volume/mute</span><meter aria-label={`${row.name} channel ${index+1} after mute peak`} min={-100} max={0} value={Math.min(0,channel.outputPeakDb)}/><output>{db(channel.outputPeakDb)}</output></div></div>):<div className="audio-no-sample">No current level reading — not confirmed silence.</div>}
         <dl className="audio-settings"><dt>OBS mute</dt><dd className="audio-mute">{field(row.muted,v=>v?'Muted':'Not muted')}</dd><dt>Input volume setting</dt><dd>{field(row.volumeDb,v=>`${v.toFixed(1)} dB`)}</dd><dt>Source active</dt><dd>{field(row.active,v=>v?'Yes':'No')}</dd><dt>Assigned tracks</dt><dd>{field(row.tracks,v=>Object.entries(v).filter(([,on])=>on).map(([k])=>k).join(', ')||'None')}</dd><dt>OBS monitoring</dt><dd>{field(row.monitor,v=>v.replace('OBS_MONITORING_TYPE_','').replaceAll('_',' ').toLowerCase())}</dd></dl>
-        <Observation api={api} row={row} collection={audio.collection} saved={s.workspace.audioObservations.find(n=>n.collection===audio.collection&&n.inputName===row.name)} editable={editable&&fresh}/>
+        <Observation api={api} row={row} collection={audio.collection} saved={s.workspace.audioObservations.find(n=>n.collection===audio.collection&&n.inputName===row.name)} editable={notesEditable}/>
       </article>;
     })}</div>
     <details><summary>Saved observations from all collections ({s.workspace.audioObservations.length})</summary><p>Historical operator statements only; an input may have been renamed or removed since the observation.</p>{s.workspace.audioObservations.map(n=><p key={JSON.stringify([n.collection,n.inputName])}><strong>{n.inputName}</strong> · {n.collection} · {roleLabel[n.role]} · {n.respondsTo.map(v=>signalLabel[v]).join(', ')||'No response tests recorded'} · listening: {n.listening}</p>)}</details>

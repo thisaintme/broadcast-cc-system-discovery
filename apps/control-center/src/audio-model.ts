@@ -31,7 +31,7 @@ export function normalizeAudioObservations(raw:unknown):AudioObservation[]{
     if(!collection||!inputName)continue;
     const role=AUDIO_ROLES.includes(r.role as AudioRole)?r.role as AudioRole:'unclassified';
     const respondsTo=AUDIO_SIGNALS.filter(x=>Array.isArray(r.respondsTo)&&r.respondsTo.includes(x));
-    const listening=['heard','not-heard','uncertain'].includes(String(r.listening))?r.listening as AudioObservation['listening']:'not-tested';
+    const listening=typeof r.listening==='string'&&['heard','not-heard','uncertain'].includes(r.listening)?r.listening as AudioObservation['listening']:'not-tested';
     const parsed=typeof r.updatedAt==='string'?Date.parse(r.updatedAt):NaN;
     out.set(JSON.stringify([collection,inputName]),{collection,inputName,role,respondsTo,listening,
       monitoringPoint:text(r.monitoringPoint,400),notes:text(r.notes,1200),updatedAt:Number.isFinite(parsed)?new Date(parsed).toISOString():'',basis:'operator-reported'});
@@ -45,7 +45,6 @@ export function parseAudioChannels(raw:unknown):AudioChannel[]|null{
   const db=(n:number)=>n===0?-100:Math.max(-100,20*Math.log10(n));
   for(const tuple of raw){
     if(!Array.isArray(tuple)||tuple.length!==3||!tuple.every(n=>typeof n==='number'&&Number.isFinite(n)&&n>=0&&n<=1000000))return null;
-    // OBS: [post-volume magnitude, post-volume peak, pre-volume peak].
     channels.push({inputPeakDb:db(tuple[2]),outputPeakDb:db(tuple[1])});
   }
   return channels;
