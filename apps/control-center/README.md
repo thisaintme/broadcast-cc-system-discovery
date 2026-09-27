@@ -1,70 +1,52 @@
 # Broadcast Control Center Preview
 
-**Milestone 1: local setup and rehearsal — not a live-broadcast controller.**
+## Alpha.3 — offline Program and caption rehearsal
 
-This is a separate Electron application alongside the existing discovery tool. The discovery app and its build remain unchanged. No Node/npm installation is required to run the packaged Mac app.
+This is NOT a live-service controller. The existing System Discovery app remains separate and unchanged. The packaged universal macOS DMG/ZIP includes its runtime; Node/npm are not required on the church Mac.
 
-## What works
+### Three modes
 
-- Import a discovery v1/v2 report or the earlier draft site profile using a native file picker. Import projects known fields only; it never executes imported actions or retains raw Companion options.
-- Connect to OBS on this Mac, recursively inspect scenes and groups, and select scene/source mappings. Group cycles are bounded and failed reads remain unresolved.
-- Read OBS input mute/volume/monitor/track snapshots without changing them, including eligible capture sources with embedded audio. A snapshot is not a level meter or proof of physical audio routing.
-- Inspect the local Companion full export, with an explicit confirmation, using macOS curl. Raw export data is processed in memory, not a temporary file. Only allowlisted connection metadata is retained; device health remains unknown.
-- Add/remove local services and speakers. Default service selection and schedule display use Europe/Berlin. The date-time editor uses the Mac's timezone, as labelled. Next-service information is derived from the schedule.
-- Run Prepare → Intro → Main → Speaker/Bible → Main → Outro in **simulation**, including cancellable ten-second returns.
-- Optionally arm **OBS Preview rehearsal**. It only selects already mapped OBS Preview scenes; it does not transition Program, edit text, change source visibility, or mute anything.
-- Save a local workspace and export it for review. Credentials and raw configuration are not part of the workspace format. Treat site names and LAN addresses as private nevertheless.
+- **Simulation** is the default. No device writes.
+- **OBS Preview** selects mapped Preview scenes only. It does not edit captions and retains the alpha.2 requirement that every checked output is explicitly off and Studio Mode on.
+- **Offline Program & captions** changes real Program scenes, Bible-reference text, next-service text and a reviewed pool of speaker-name visibility items. It requires a separately inspected, duplicated test collection whose name starts `BCC TEST`, confirmation of mappings, an explicit native consent dialog and fresh output checks before each write.
 
-## Install the Mac app
+No stream start/stop, audio mute/fader/track, PTZ, RODE switching, X32, or YouTube API commands exist. Scene changes can nonetheless activate the media/audio already configured in a scene. Stop external encoders and disable automation yourself; OBS built-in output checks do not cover other equipment, plugins or projectors.
 
-Open the **Control Center Preview - macOS** Actions workflow. A successful run has the `Broadcast-Control-Center-Preview-macOS` artifact containing a universal DMG and app ZIP. Open the DMG and copy **Broadcast Control Center Preview** to Applications; this does not replace System Discovery.
+## First run / upgrade
 
-The alpha package is not Developer ID signed or notarized. Do not disable Gatekeeper system-wide. Consult Apple's app-specific Open Anyway procedure for a build you trust. A successful CI build does not establish compatibility with the physical broadcast equipment.
+1. Quit the previous Preview app. Install the alpha.3 DMG as **Broadcast Control Center Preview** in Applications. Existing local services/speakers are retained; old workspace files gain empty caption mappings. No control authorization survives an import or restart.
+2. In OBS, back up your working scene collection and use Scene Collection → Duplicate. Name the copy `BCC TEST` or `BCC TEST - rehearsal`. Do not rename the production collection instead of duplicating it. Select the copy in OBS and stop all outputs. Disable external automated transitions and encoders.
+3. Open Connections & mappings in the app. Import your existing workspace only if it is not already loaded. Keep it out of the public repository.
+4. Connect & inspect OBS again. The current password is used only for the connection; failures retain it for retry, success clears it. Inspect the selected test collection, not the production collection.
+5. Review all five scene roles. Choose the Bible-reference and next-service text sources that have enabled paths in their scenes.
+6. In **Offline Program & speaker-name mapping**, enter the exact test-collection name and choose the group containing the existing speaker-name text inputs. Review every text item in the displayed pool: these will be treated as mutually exclusive names. Images/audio/group items are not included. Select each person's source; an unmapped person is refused, never substituted.
+7. Click **I reviewed the pool — confirm scene & caption mappings**. This saves metadata only.
+8. In Service rehearsal, select a service and choose **Enable offline Program & captions…**. Read and confirm the native dialog. Run Prepare → Intro → Main → Speaker/Bible → Outro while watching OBS.
 
-## First use
+Prepare verifies mappings and writes the next-service date. The next entry is chronological, not necessarily next Sunday. Dates use Europe/Berlin. With no later entry, the caption is `Nächster Termin folgt.`. Text changes use an overlay containing only `text`; fonts and unrelated settings are not reset. File-backed or unverified text sources are refused.
 
-1. Open Connections & mappings → Import report / site profile. Select the latest discovery JSON on the Mac; do not add it to GitHub.
-2. Add at least one test service and a test speaker under Services & speakers.
-3. Run a simulation in Service rehearsal. No OBS connection is required for simulation.
-4. Outside a service, connect and inspect OBS using its current WebSocket password. The password is not persisted. It is used to authenticate this connection only.
-5. Review the recursive groups, choose all five scene roles and confirm them. Source selections and hardware-validation notes are metadata, not device commands.
-6. Optional: manually enable OBS Studio Mode, stop all OBS outputs, and disable external automation that could transition Preview to Program. Explicitly enable OBS Preview rehearsal. The same rehearsal buttons now select Preview scenes only; displayed speaker names/Bible references still remain simulated in the application.
-7. Export the local workspace after recording the unresolved hardware/audio mappings.
+Speaker display resolves item IDs live, disables other reviewed text names and enables the selected one. The containing group, icons, camera sources and audio are left alone. Bible display updates only its text, not the group. The ten-second return starts after Program readback confirms the target scene.
 
-## Safety boundary
+**Cancel / return to Simulation** also cancels an in-flight command. Completed edits remain in the test collection. There is no automatic rollback, scene restoration, output shutdown or replay of commands after reconnect. A partial failure can leave some text/visibility edits completed; inspect the test collection before retrying.
 
-There is exactly one outbound OBS write: `SetCurrentPreviewScene`. Streaming, recording, virtual camera, replay buffer and Studio Mode state are re-read before every Preview write. Active or unknown output state, a collection mismatch, a missing scene, or an invalidated generation blocks that write. External OBS changes and disconnection cancel timers and disarm Preview rehearsal. A restart never resumes rehearsal or old timers.
+## Safety limits and diagnostics
 
-There is no atomic interlock with other software. Another operator or external automation can still transition OBS Preview to Program, or start outputs between checks. Use this milestone outside a service. Do not use it as a safety barrier for other controllers.
+Streaming and recording must explicitly report off. For offline Program mode only, a 604 response from the exact GetReplayBufferStatus or GetVirtualCamStatus handler is recorded as an absent resource, separately from unknown. Their boolean value remains null. Unsupported requests, malformed flags, timeouts, other errors and stream/record failures remain blocking. The basis is OBS's official output-handler implementation, where those two requests return 604 when their output object does not exist. Queries are repeated before every mutation.
 
-No YouTube API, Companion action trigger, PTZ, RØDECaster switch, X32 mute, OBS audio write, OBS text write or Program-transition implementation exists in this build. Hardware validation notes cannot unlock these functions. Closing the application does not stop OBS or restore a scene.
+There is no atomic interlock with another controller. A remote operator can change state between a read and a write. Use this milestone only in an isolated offline rehearsal. Unexpected Program changes, relevant configuration events, disconnection or output-state changes cancel pending actions. Safe errors retain request names/codes, never raw upstream payloads.
 
-Electron uses an isolated, sandboxed renderer, a bundled-resource-only custom protocol, blocked navigation/new windows, denied renderer permissions, and a narrow sender-validated IPC bridge. Endpoint inputs are limited to localhost; credentials in URLs and arbitrary paths are rejected. The full-export reader ignores curl configuration and proxies, bounds size/time and does not follow redirects. Errors never echo response bodies.
+The renderer remains isolated and sandboxed, with no Node access. IPC is sender-validated and offers semantic commands only. Device URLs are localhost-only. Import/export projects known fields and cannot execute Companion actions. Workspace data is a versioned local JSON file, not SQLite yet; logs are session-only. The package is unsigned/not notarized. Do not disable Gatekeeper globally.
 
-## Persistence and implementation scope
+## Development / validation
 
-React + TypeScript UI; Electron main-process controller; direct obs-websocket adapter; separate read-only Companion adapter. The main process owns rehearsal state and timers. Workspace and schedule persistence for this alpha is a versioned, atomically replaced local JSON file, not SQLite yet. It is stored in the application's user-data directory, with no service credentials. The activity log is session-only. SQLite migrations, encrypted credential persistence and durable operational logs belong to the production milestone.
+CI uses Node 24 and pinned direct dependencies. Run `npm install`, `npm run typecheck`, `npm test`, `npm run build`. `npm run dist:mac` builds the universal package. The resolved package-lock is included in the CI artifact; a reviewed committed lockfile remains necessary before production distribution.
 
-Not implemented: YouTube OAuth/scheduling/stream start-stop, actual lower-third text updates, Bible text/licensing and verse validation, camera directing/tracking, device-feedback validation, automatic audio routing, or production service operation. The app marks these as unavailable rather than pretending that simulated actions operated hardware.
+Tests use invented scene names, a simulated clock and an authenticated synthetic WebSocket peer on a random loopback port. No test contacts church equipment. The suite retains alpha.2 authentication/inspection regressions and adds real adapter coverage for offline caption/Program writes, readback, cancellation, partial failures, unmapped speakers, changed groups, file-backed text, saved authorization and output checks. Passing CI is not physical-hardware acceptance.
 
-## Development and tests
-
-Node 24 is used in CI. From this folder:
-
-```sh
-npm install
-npm run typecheck
-npm test
-npm run build
-npm start
-```
-
-`npm run dist:mac` packages universal DMG/ZIP on macOS. Direct dependencies are pinned. The build workflow uploads its resolved package-lock.json with the artifacts; commit a reviewed lockfile before a production release. The first install currently uses npm install because there is no committed lockfile yet.
-
-Tests use synthetic fixtures, never site exports. They cover parsing, endpoint restrictions, credential exclusion, recursive group traversal, unknown/active output guards, external interruption, timer cancellation, phase validity and restart behavior. No test contacts broadcast devices.
-
-Primary API references:
+Primary protocol references:
 - https://github.com/obsproject/obs-websocket/blob/master/docs/generated/protocol.md
-- https://www.electronjs.org/docs/latest/tutorial/security
-- https://www.electronjs.org/docs/latest/api/protocol
-- https://www.electron.build/v26/docs/mac/
+- https://github.com/obsproject/obs-websocket/blob/master/src/requesthandler/RequestHandler_Outputs.cpp
+
+## Not included
+
+YouTube scheduling/OAuth/start/stop; German/Russian dual-encoder operation; broadcast-audio automation; camera switching/tracking; Bible text and verse validation; persistent operational logging; production recovery; signing/notarization. The global OBS state label reports OBS only, not verified YouTube or external-encoder state.

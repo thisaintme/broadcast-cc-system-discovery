@@ -1,22 +1,17 @@
 # Preview changelog
 
+## 0.1.0-alpha.3
+
+- Added explicitly enabled offline Program/scene and caption control in a duplicated `BCC TEST` collection.
+- Added a reviewed mutually exclusive speaker-name pool and per-person source mappings. Names are selected by visibility; no person's existing text is overwritten.
+- Added Bible-reference and next-service text updates, preserving font/style settings and refusing file-backed text.
+- Read back text, visibility and Program state before progressing. Start ten-second returns after confirmation; stop further writes on cancellation, foreign changes or failures.
+- Keep changes already completed in the test collection rather than performing an unsafe automatic rollback.
+- Cancellation remains reachable while an OBS operation is pending.
+- Separate known absent optional output resources from unknown failures in offline mode. Keep Preview-only compatibility/guards and alpha.2 login regression coverage.
+- Existing workspace schema remains readable; new caption fields are projected and authorization is reset on import/export/restart.
+- No live streaming, audio, YouTube or physical-hardware command implementations were added.
+
 ## 0.1.0-alpha.2
 
-### OBS connection regression
-
-The alpha.1 connection handler put both the WebSocket handshake and a `Promise.all` of seven state queries inside one catch. A valid authenticated session was disconnected if any state query failed, and every failure was reported as a port/password/server error. OBS can reject `GetReplayBufferStatus` or `GetVirtualCamStatus` with status 604 when those resources are unavailable. This is a reproduced failure path; the earlier generic error did not retain enough information to identify which request failed on a particular installation.
-
-- Separate the handshake from post-authentication queries.
-- Independently settle state queries, keeping unavailable fields unknown and reporting request names and numeric codes.
-- Continue read-only scene/group inspection even when optional output status is unavailable.
-- Use an explicit JSON OBS v5 client for deterministic protocol testing.
-- Keep safety checks conservative: unknown is not off and does not authorize Preview writes.
-- Distinguish authentication rejection (4009), handshake/network errors, and individual request failures. Never echo upstream messages or credential-bearing payloads.
-- Keep the password field on failed authentication or inspection. Clear it only after successful inspection or the explicit Clear password button. Passwords are not trimmed or persisted.
-- Reconfirm scene mappings after initiating inspection from the UI.
-
-### Regression coverage
-
-Synthetic localhost WebSocket tests reproduce the old post-authentication failure and exercise successful inspection, wrong-password retry, optional capability failures, unknown-state guards, named inspection errors and status recovery. A separate Electron smoke test enters a synthetic password through the actual React input, clicks Connect & inspect OBS, verifies failure/retry/success behavior through IPC, and checks that neither controls nor persisted credentials are produced.
-
-These tests do not use the church's configuration, credentials or hardware. The existing discovery app remains unchanged. This build is still an unsigned setup/rehearsal preview, not a live-service controller.
+Separated authentication from optional OBS status queries. Correct logins are no longer disconnected merely because an optional status request fails. Kept unavailable status unknown, added request/code diagnostics and synthetic authenticated WebSocket regression tests. Password input is retained after failure and cleared only after success or explicit Clear password. The original discovery application remained unchanged.
