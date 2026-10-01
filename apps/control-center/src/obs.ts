@@ -49,15 +49,17 @@ export class ObsAdapter implements PreviewPort {
     finally{this.onState();}
   }
   private async refreshServiceMute(socket:OBSWebSocket):Promise<void> {
-    const name=this.serviceMute.inputName,revision=this.muteRevision,epoch=this.epoch;
-    if(!name||this.changing||this.serviceMute.phase==='pending')return;
+    const observed=this.serviceMute;
+    const name=observed.inputName,revision=this.muteRevision,epoch=this.epoch;
+    if(!name||this.changing||observed.phase==='pending')return;
     try {
       const result=await this.read('GetInputMute',{inputName:name});
-      if(this.socket!==socket||!this.authenticated||revision!==this.muteRevision||epoch!==this.epoch||this.changing)return;
+      // A delayed poll must not replace a newer event, pending command or successful readback.
+      if(this.socket!==socket||!this.authenticated||revision!==this.muteRevision||epoch!==this.epoch||this.changing||this.serviceMute!==observed)return;
       if(typeof result.inputMuted!=='boolean')throw new Error('Unknown mute state.');
       this.serviceMute={inputName:name,muted:result.inputMuted,checkedAt:Date.now(),phase:'confirmed',note:'Observed OBS input mute state; not a final-stream sound measurement.'};
     }catch{
-      if(this.socket===socket&&revision===this.muteRevision&&!this.changing)this.serviceMute=unknownServiceAudio(name,'Mute status read failed; not confirmed.');
+      if(this.socket===socket&&revision===this.muteRevision&&!this.changing&&this.serviceMute===observed)this.serviceMute=unknownServiceAudio(name,'Mute status read failed; not confirmed.');
     }
   }
   async connect(url:string,password:string):Promise<void>{
