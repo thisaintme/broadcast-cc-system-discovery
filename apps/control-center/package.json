@@ -1,8 +1,8 @@
 {
   "name": "broadcast-control-center-preview",
-  "version": "0.1.0-alpha.4",
+  "version": "0.1.0-alpha.5",
   "private": true,
-  "description": "Offline rehearsal and read-only audio verification for Broadcast Control Center",
+  "description": "Offline scene, caption and opt-in service-audio rehearsal for Broadcast Control Center",
   "license": "MIT",
   "type": "module",
   "main": "dist/main.cjs",

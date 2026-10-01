@@ -1,5 +1,13 @@
 # Preview changelog
 
+## 0.1.0-alpha.5
+
+- Add optional, session-only service-input mute rules to offline Program rehearsal. Native consent includes an unchecked checkbox naming the configured input; no new workspace permission or renderer arbitrary-command API exists.
+- Prepare/Intro/Outro explicitly mute with readback. Intro → Main confirms Program before unmuting. Caption actions, automatic/manual returns and repeated Main preserve the existing mute, including manual mutes.
+- Add a service-audio status card with confirmed/pending/unknown and stale/disconnected handling. Status represents one OBS input, not final stream audibility.
+- Refuse missing/malformed input state, input mismatch, output uncertainty, canceled/stale actions and failed readback. No automatic retries, rollback, unmute on exit or reconnection replay. Only SetInputMute is added; volumes, tracks, monitoring, other inputs and physical hardware are untouched.
+- Retain alpha.3 caption and alpha.4 read-only meter paths. Add synthetic unit/socket regressions and an Electron native-consent/button test with a real timed return preserving a manual mute.
+
 ## 0.1.0-alpha.4
 
 - Add a read-only Audio verification sidebar screen with opt-in input meter/activity subscriptions, bounded metadata polling and separate approximately 5 Hz telemetry delivery.

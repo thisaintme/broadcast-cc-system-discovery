@@ -1,5 +1,6 @@
 /** Shared contracts. Credentials and raw device configuration are never workspace fields. */
 import type {AudioObservation,AudioSnapshot} from './audio-model.ts';
+import type {ServiceAudioIntent,ServiceAudioStatus} from './service-audio.ts';
 export const ROLES = ['intro', 'main', 'speaker', 'bible', 'outro'] as const;
 export type Role = typeof ROLES[number];
 export type Phase = 'idle' | 'prepared' | Role;
@@ -17,7 +18,6 @@ export interface Bindings {
   scenes:Record<Role,string>; speakerText:string; bibleText:string;
   nextServiceText:string; audioInput:string; confirmed:boolean;
 }
-/** All direct text items in the chosen group must be explicitly reviewed as speaker names. */
 export interface CaptionBindings {
   testCollection:string; speakerGroup:string; speakerPool:string[];
   speakerSources:Record<string,string>; confirmed:boolean;
@@ -29,7 +29,6 @@ export interface Workspace {
   inventory:Inventory|null; connections:Connection[]; bindings:Bindings;
   captions:CaptionBindings; services:Service[]; speakers:string[];
   hardwareNotes:{frontInput:string;sideInput:string;audioRoute:string};
-  /** Historical operator statements, not detected routing or permission to control audio. */
   audioObservations:AudioObservation[];
 }
 export interface TransportState {
@@ -42,8 +41,10 @@ export interface EventEntry { at:string; message:string }
 export interface RuntimeState {
   mode:Mode; phase:Phase; selectedService:string; overlay:string;
   returnAt:number|null; busy:boolean; events:EventEntry[];
+  /** Only the native offline-mode consent can enable audio rules. Never persisted. */
+  serviceAudioEnabled?:boolean;
 }
-export interface Snapshot { version:string; workspace:Workspace; runtime:RuntimeState; transport:TransportState; companionResult:string }
+export interface Snapshot { version:string; workspace:Workspace; runtime:RuntimeState; transport:TransportState; companionResult:string;serviceAudio?:ServiceAudioStatus }
 export interface SourceCandidate {name:string;path:string;enabled:boolean}
 export const blankBindings=():Bindings=>({scenes:{intro:'',main:'',speaker:'',bible:'',outro:''},speakerText:'',bibleText:'',nextServiceText:'',audioInput:'',confirmed:false});
 export const blankWorkspace=():Workspace=>({
@@ -63,7 +64,7 @@ export interface Reader {read(name:ReadRequest,data?:Record<string,unknown>):Pro
 export interface PreviewPort extends Reader {
   state():TransportState;
   preview(scene:string,collection:string,valid:()=>boolean):Promise<void>;
-  offline?(workspace:Workspace,role:'prepare'|Role,value:string,serviceId:string,valid:()=>boolean):Promise<void>;
+  offline?(workspace:Workspace,role:'prepare'|Role,value:string,serviceId:string,valid:()=>boolean,audioIntent?:ServiceAudioIntent):Promise<void>;
 }
 export interface Bridge {
   snapshot():Promise<Snapshot>; importFile():Promise<Snapshot>; exportFile():Promise<string>;

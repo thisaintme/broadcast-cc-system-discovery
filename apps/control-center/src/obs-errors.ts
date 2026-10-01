@@ -18,7 +18,7 @@ export function connectionFailure(error:unknown,endpoint:string):ObsFailure{
   if(code==='ECONNREFUSED')return new ObsFailure(`Connection refused at ${endpoint}. No OBS WebSocket listener accepted this connection.`,code);
   return new ObsFailure(`OBS WebSocket connection to ${endpoint} failed${code===undefined?'':` (code ${code})`}. No authenticated session was established.`,code);
 }
-export function requestFailure(error:unknown,request:ReadRequest|CaptionWrite|'SetCurrentPreviewScene'):ObsFailure{
+export function requestFailure(error:unknown,request:ReadRequest|CaptionWrite|'SetCurrentPreviewScene'|'SetInputMute'):ObsFailure{
   const code=obsErrorCode(error),suffix=code===undefined?'':` (code ${code})`;
   const explanation=code===604?'The requested resource is unavailable in its current state.':code===204?'This request is not supported by the connected OBS server.':code==='BCC_TIMEOUT'?'The request timed out.':'The request did not complete.';
   return new ObsFailure(`OBS ${request} failed${suffix}. ${explanation}`,code);
