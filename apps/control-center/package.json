@@ -1,6 +1,6 @@
 {
   "name": "broadcast-control-center-preview",
-  "version": "0.1.0-alpha.5",
+  "version": "0.1.0-alpha.6",
   "private": true,
   "description": "Offline scene, caption and opt-in service-audio rehearsal for Broadcast Control Center",
   "license": "MIT",
