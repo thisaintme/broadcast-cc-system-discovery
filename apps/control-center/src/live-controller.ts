@@ -2,6 +2,7 @@ import type {Workspace,Role,Reader} from './model.ts';
 import {selectService} from './workspace.ts';
 import {executeLiveAction} from './live-actions.ts';
 import {blockedActions,commandPermissions,requireAudio} from './live-validation.ts';
+import {expectedStreamEvent,duplicateTerminalStreamEvent} from './live-events.ts';
 import {LIVE_COMMANDS,LiveFailure,emptyObservation,noPermissions,normalizePermissions,safeLiveError,liveMappingKey} from './live-contract.ts';
 import type {LiveCommand,LiveObservation,LivePermissions,LivePhase,LivePort,LiveRead,LiveSnapshot,LiveWrite,JournalPort} from './live-contract.ts';
 export interface LiveClock{now():number;set(fn:()=>void,ms:number):unknown;clear(handle:unknown):void}
@@ -76,7 +77,7 @@ export class LiveController{
       const next=await this.query();if(!this.port.isConnected()||revision!==this.revision||connection!==this.connection||this.working)return;
       if(this.authorized&&(next.collection!==this.collection||next.profile!==this.profile))this.release('OBS collection/profile changed. Inspect and enable control again.');
       if(this.observed.program&&next.program!==this.observed.program)this.interruptAutomation('External Program change detected; pending return cancelled.');
-      if(this.observed.streaming!==null&&next.streaming!==this.observed.streaming)this.interruptAutomation('OBS transmission changed; pending automation cancelled.');
+      if(this.observed.streaming!==null&&(next.streaming!==this.observed.streaming||next.reconnecting!==this.observed.reconnecting))this.interruptAutomation('OBS transmission changed; pending automation cancelled.');
       if(next.program!==this.observed.program||this.phase==='unknown')this.phase=this.infer(next.program);
       this.observed=next;
       if(this.authorized&&(!next.collection||!next.profile||!next.program||next.streaming===null))this.release('Required OBS status is unknown. Control released without changing outputs.');
@@ -95,13 +96,16 @@ export class LiveController{
     }
     if(name==='InputMuteStateChanged'&&d.inputName===this.workspace().bindings.audioInput){
       this.revision++;const known=this.expectedEvent('mute',d.inputMuted);
-      if(!known){this.audioRevision++;if(this.audioChanging)this.interruptAutomation('Manual mute change took priority over the pending audio action.');}
+      if(!known&&(typeof d.inputMuted!=='boolean'||d.inputMuted!==this.observed.muted)){
+        this.audioRevision++;if(this.audioChanging)this.interruptAutomation('Manual mute change took priority over the pending audio action.');
+      }
       this.observed={...this.observed,muted:flag(d.inputMuted)};this.emit();return;
     }
     if(name==='StreamStateChanged'){
       this.revision++;const target=this.expected.get('stream');
-      if(!target||target.until<this.clock.now())this.interruptAutomation('OBS transmission state changed externally; pending automation cancelled.');
-      this.observed={...this.observed,streaming:flag(d.outputActive),reconnecting:d.outputState==='OBS_WEBSOCKET_OUTPUT_RECONNECTING'?true:d.outputState==='OBS_WEBSOCKET_OUTPUT_RECONNECTED'?false:this.observed.reconnecting};this.emit();return;
+      const ours=!!target&&target.until>=this.clock.now()&&typeof target.value==='boolean'&&expectedStreamEvent(target.value,d);
+      if(!ours&&!duplicateTerminalStreamEvent(this.observed.streaming,d))this.interruptAutomation('OBS transmission state changed externally; pending automation cancelled.');
+      this.observed={...this.observed,streaming:flag(d.outputActive),reconnecting:d.outputState==='OBS_WEBSOCKET_OUTPUT_RECONNECTING'?true:['OBS_WEBSOCKET_OUTPUT_RECONNECTED','OBS_WEBSOCKET_OUTPUT_STARTED','OBS_WEBSOCKET_OUTPUT_STOPPED'].includes(d.outputState)?false:this.observed.reconnecting};this.emit();return;
     }
     if(name==='InputSettingsChanged'){
       const w=this.workspace();if(![w.bindings.bibleText,w.bindings.nextServiceText,...w.captions.speakerPool].includes(d.inputName))return;
@@ -149,24 +153,29 @@ export class LiveController{
     this.working=true;this.operation=command;this.lastError='';this.emit();
     const w=this.workspace(),key=liveMappingKey(w),serviceId=this.serviceId();
     this.audioChanging=commandPermissions(command).audio;const audioRevision=this.audioRevision;let streamIssued=false;
+    let permittedPrograms=new Set([this.observed.program]),pendingProgram:string|null=null;
     const valid=()=>token===this.generation&&connection===this.connection&&this.port.isConnected()&&liveMappingKey(this.workspace())===key&&this.mapping===key&&(!this.audioChanging||audioRevision===this.audioRevision);
     const reader:Reader={read:(n,d={})=>this.read(n,d,valid)};
     const check=async():Promise<LiveObservation>=>{
       if(!valid())throw new LiveFailure('Action interrupted; no further commands sent.');
       const o=await this.query();if(!valid())throw new LiveFailure('Action interrupted.');
       if(o.collection!==this.collection||o.profile!==this.profile||!o.program||o.streaming===null)throw new LiveFailure('OBS target or status changed. No further commands sent.');
-      if((command==='prepare'||command==='intro'||(command==='start'&&!streamIssued))&&(o.streaming!==false||o.reconnecting===true))throw new LiveFailure('OBS is transmitting or reconnecting. Preparation was stopped; it was not restarted.');
+      if(!permittedPrograms.has(o.program))throw new LiveFailure('Program changed outside this action. No further commands sent.');
+      if(pendingProgram&&o.program===pendingProgram){permittedPrograms=new Set([pendingProgram]);pendingProgram=null;}
+      if((command==='prepare'||command==='intro'||(command==='start'&&!streamIssued))&&(o.streaming!==false||o.reconnecting!==false))throw new LiveFailure('OBS is transmitting, reconnecting, or its reconnect state is unknown. Preparation stopped; it was not restarted.');
       this.observed=o;this.emit();return o;
     };
     const change=async(name:LiveWrite,data:Record<string,unknown>={})=>{
-      await check();
-      const p=this.permissions;
+      await check();const p=this.permissions;
       if((['SetInputSettings','SetSceneItemEnabled','SetCurrentProgramScene'].includes(name)&&!p.scenes)||(name==='SetInputMute'&&!p.audio)||(['StartStream','StopStream'].includes(name)&&!p.stream))throw new LiveFailure('Permission was released.');
       if(name==='SetInputMute'&&(data.inputName!==w.bindings.audioInput||typeof data.inputMuted!=='boolean'))throw new LiveFailure('Service-input mismatch.');
       if(name==='StartStream'&&command!=='start')throw new LiveFailure('Start requires its separate confirmed action.');
       if(name==='StopStream'&&command!=='stop')throw new LiveFailure('Stop requires its separate confirmed action.');
       await this.record(command,'requested',name);await check();
-      if(name==='SetCurrentProgramScene')this.expected.set('program',{value:data.sceneName,until:this.clock.now()+12000});
+      if(name==='SetCurrentProgramScene'){
+        pendingProgram=String(data.sceneName);permittedPrograms.add(pendingProgram);
+        this.expected.set('program',{value:data.sceneName,until:this.clock.now()+12000});
+      }
       if(name==='SetInputSettings')this.expected.set('text:'+data.inputName,{value:(data.inputSettings as any).text,until:this.clock.now()+5000});
       if(name==='SetSceneItemEnabled')this.expected.set('item:'+JSON.stringify([data.sceneName,data.sceneItemId]),{value:data.sceneItemEnabled,until:this.clock.now()+5000});
       if(name==='SetInputMute')this.expected.set('mute',{value:data.inputMuted,until:this.clock.now()+5000});
