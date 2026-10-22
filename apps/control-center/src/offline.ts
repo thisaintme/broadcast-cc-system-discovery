@@ -75,7 +75,8 @@ async function verifyText(reader:Reader,w:Workspace,role:'bible'|'outro'):Promis
 export function nextServiceCaption(w:Workspace,id:string):string{
   const selected=w.services.find(s=>s.id===id);if(!selected)throw new Error('Select a service first.');
   const next=[...w.services].sort((a,b)=>a.startsAt.localeCompare(b.startsAt)).find(s=>s.startsAt>selected.startsAt);
-  return next?new Intl.DateTimeFormat('de-DE',{timeZone:'Europe/Berlin',weekday:'long',day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit'}).format(new Date(next.startsAt))+' Uhr':'Nächster Termin folgt.';
+  // Keep the existing OBS label compact: date and time only, never a weekday prefix.
+  return next?new Intl.DateTimeFormat('de-DE',{timeZone:'Europe/Berlin',day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit'}).format(new Date(next.startsAt))+' Uhr':'Nächster Termin folgt.';
 }
 /** Stop further writes on interruption; do not automatically undo completed edits. */
 export async function executeOffline(port:CaptionPort,w:Workspace,role:'prepare'|Role,value:string,serviceId:string,valid:()=>boolean):Promise<void>{
@@ -87,6 +88,7 @@ export async function executeOffline(port:CaptionPort,w:Workspace,role:'prepare'
   if(role==='prepare'||role==='outro'||role==='bible'){
     const name=await verifyText(port,w,role==='bible'?'bible':'outro'),caption=role==='bible'?text(value,500):nextServiceCaption(w,serviceId);
     if(role==='bible'&&!caption.trim())throw new Error('Enter a Bible reference first.');
+    // Update content only; preserve the operator's font, extents and scene-item transform.
     await change('SetInputSettings',{inputName:name,inputSettings:{text:caption},overlay:true});
     if((await captionSettings(port,name)).text!==caption)throw new Error('OBS did not confirm the caption text. Program was not advanced.');
   }

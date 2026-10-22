@@ -1,5 +1,12 @@
 # Preview changelog
 
+## 0.2.0-alpha.3
+
+- Remove the weekday prefix from the next-service Outro label. The shared live/rehearsal formatter now emits only the German date and Berlin-local time, for example `01.10.2026, 18:00 Uhr`.
+- Preserve the existing text-only OBS update (`overlay: true`): do not resize or fit the label, overwrite font/custom extents, or change scene-item positions, scale, bounds or crop. Removing the extra weekday avoids widening the caption with unwanted content; no automatic layout correction is introduced.
+- Add exact-format regressions for every weekday, both daylight-saving transitions and local date/year rollovers, plus live/offline Prepare/Outro tests for direct and grouped FreeType labels. Verify unchanged non-text settings and transforms, normal scene switching, selected-input muting and no stream stop.
+- Retain the existing no-next-service fallback, safety checks, speaker/Bible actions and automatic returns. Synthetic tests do not replace a visual check on the broadcast Mac.
+
 ## 0.1.0-alpha.5
 
 - Add optional, session-only service-input mute rules to offline Program rehearsal. Native consent includes an unchecked checkbox naming the configured input; no new workspace permission or renderer arbitrary-command API exists.
