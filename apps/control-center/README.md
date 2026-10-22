@@ -1,47 +1,65 @@
-# Broadcast Control Center Preview
+# Broadcast Control Center — Live Service Alpha
 
-## Alpha.5 — optional service-audio mute rules
+## 0.2.0-alpha.1
 
-Separate Electron + React + TypeScript macOS application. The original System Discovery app remains unchanged. This is an **offline rehearsal alpha, not a live-service controller**. Packaged DMG/ZIP installers include the runtime; no Node/npm installation is needed on the church Mac.
+The packaged application now opens **Live Service** in **Observe only** mode. This is a supervised controller for one already-configured OBS instance and its main broadcast. It can join an ongoing stream without changing its picture, audio or transmission. No Node/npm installation is needed on the broadcast Mac.
 
-### Modes
+The macOS application keeps the name **Broadcast Control Center Preview** and the same app ID/user-data location, so existing local schedules, speaker lists, mappings and observations remain available. The original System Discovery application remains separate. The prior offline tools are available under **Advanced rehearsal & audio meters…**, which releases live control and relaunches the application into the legacy interface. In the advanced interface, use **View → Return to Live Service (Observe only)**.
 
-- **Simulation:** no device writes.
-- **OBS Preview:** mapped Preview scene selection only, with the existing all-outputs-off and Studio Mode checks. No captions or audio are changed.
-- **Offline Program & captions:** the accepted alpha.3 real scene/caption workflow in a live-inspected, duplicated `BCC TEST` collection, with confirmed mappings, native consent, fresh output checks and readback.
-- **Optional service audio in offline Program mode:** check the additional box in the native mode dialog to apply mute rules to the exact configured service input. It starts unchecked every time and never survives reset/restart. Enabling a mode alone does not mute anything.
+## First use during a service
 
-## Next offline test
+1. Install the new DMG by replacing the old Preview app, not OBS. Keep normal OBS/Stream Deck operation available. Do not stop the service just to connect the controller.
+2. Open **Connections & mappings**. Confirm the local WebSocket URL, enter the current OBS password, and click **Connect & inspect OBS**. Connection and inspection are read-only. Passwords are never persisted.
+3. Review the current OBS collection and saved mappings. **Live Service does not require BCC TEST and never switches collections.** Existing mappings are reused; only missing or changed sources need review. Select the speaker-name group and review its mutually exclusive text-name pool, plus Bible-reference text, next-service text and the confirmed service-audio input. Click **Save reviewed mappings — no OBS changes**.
+4. Open **Live Service**. Select the local service. Choose only **Scenes and captions** initially, click **Enable selected live controls…**, and review the native confirmation. Granting permissions performs no broadcast changes.
+5. Use a speaker/Bible action when it is actually needed. The confirmed display returns to Main after ten seconds. **Return to Main** does not unmute audio. External Program changes and a newer app action cancel the previous return.
+6. **Release control — leave OBS running** cancels pending automation and clears permissions without stopping OBS or restoring a previous scene/mute state. Manual operation remains available.
 
-Keep your existing workspace and tested caption mappings. Select the backed-up duplicate test collection, stop outputs/external encoders and disable competing automation. Connect & inspect OBS. Choose the service-audio input under **Connections & mappings → Caption sources** and reconfirm the scene/caption mappings.
+No artificial Intro → Outro sequence is required to join a service already underway. The phase selector records a description only; it executes nothing and starts no timer.
 
-In **Service rehearsal**, select a service, click **Enable offline Program & captions…**, check **Also apply service-audio mute rules to "<input>"**, and confirm. The mode label adds **+ AUDIO**. Prepare/Intro mute; Intro → Main confirms the scene and then unmutes; Speaker/Bible and all returns preserve the mute state; Outro mutes. Cancel/exit/reconnect never restores or replays a mute command.
+## Independent session permissions
 
-Only the selected OBS input's mute flag changes. Its volume, tracks, monitoring, other inputs and all hardware stay untouched by the new audio policy. The service-audio card shows verified, pending or unknown OBS input-mute state, not final broadcast audibility.
+- **Scenes and captions:** mapped Program scenes, reviewed per-person name visibility, Bible-reference and next-service text.
+- **Service audio:** explicit mute/unmute of only the configured service input. No volume, track, monitoring, X32 or RØDECaster changes.
+- **OBS start/stop:** the configured OBS encoder output. Destination/event setup remains manual. Start and Stop each require a separate native confirmation.
 
-Full instructions: [Service-audio rehearsal](docs/SERVICE-AUDIO.md).
-Read-only meters and operator-note workflow: [Audio verification](docs/AUDIO-VERIFICATION.md).
+Permissions are visible on every screen. No permission survives a restart, disconnect, configuration-target change, release, or interface reload. Saved mappings are not stored authorization. Missing Bible mapping blocks Bible display, not other mapped controls. Required current connection/collection/profile/Program state must be known; missing optional Replay Buffer/Virtual Camera resources are not queried by this controller.
 
-## Existing setup and captions
+## Operator actions
 
-The app imports discovery reports and workspace files locally, inspects nested OBS scenes/groups and audio snapshots, and reads selected Companion configuration metadata. Configuration is not live hardware health. Passwords, raw Companion exports and actual control authorization are not persisted. Site files still contain private names and addresses; keep them out of the public repository.
+| Action | Behavior |
+| --- | --- |
+| Check readiness | Validate Intro/Main without changing outputs. Other features have separate readiness checks. Only available before transmission. |
+| Show Intro | Verify/mute the selected service input, then select Intro. Not available during an ongoing transmission. |
+| Start OBS stream | Separate confirmation; verify/mute service input, confirm Intro on Program, then start the existing OBS destination and read back status. Requires all three permissions. Never restarts an already active/reconnecting stream. |
+| On Air | Confirm Main on Program, then unmute the selected service input. Requires scene and audio permissions. |
+| Return to Main | Scene only; preserve any manual mute. |
+| Show speaker / Bible reference | Update only the mapped text/visibility, confirm Program, then schedule a cancellable ten-second return to Main. Audio is unchanged. |
+| Mute / Unmute service audio | Set an explicit boolean mute state on the selected input and read back. No toggle. |
+| Outro | Separate confirmation; mute service input, update next-service text and show Outro. Does not stop transmission. |
+| Stop OBS stream | Separate confirmation; stop and verify OBS transmission only. Does not change scene/audio or independently complete a YouTube event. |
+| Release control | Cancel pending actions; leave completed changes and running outputs alone. |
 
-Review all five scene roles plus Bible/next-service text inputs. Select the group of separate speaker-name text sources, review every name in its mutually exclusive pool, map each person and confirm. Unmapped speakers are refused. Text updates contain only the text field, preserving styles; file-backed or malformed settings are refused. Groups, images, audio and camera items are not toggled by speaker selection. Ten-second returns start after Program confirmation and are canceled by newer actions.
+The persistent banner shows OBS transmission, Program, selected-input mute, duration, frame counters, control permissions and any return countdown. Missing/stale states become **Unknown**, not **Off**. **OBS transmitting is not independently verified YouTube live status.** Keep existing viewer-side monitoring.
 
-Service dates are displayed in Europe/Berlin; the date editor uses the Mac's timezone as labeled. Outro uses the next chronological scheduled entry. Local workspaces use versioned JSON, not SQLite yet; logs are session-only.
+## Scope limits
 
-## Safety and remaining scope
+One OBS instance and main stream. No YouTube OAuth/event creation, stream-key/encoder setting changes, Russian-stream/Web Presenter automation, X32 commands, Companion button presses, RØDECaster switching, PTZ/AI directing, email/Telegram distribution or full Bible-text retrieval. Local title presets (Gottesdienst, Andacht, custom) add a Europe/Berlin service-date prefix but do not edit YouTube. Existing titles are preserved.
 
-The BCC TEST requirement, live-session inspection, confirmed mappings, native consent and output guards remain in force. Only exact 604 responses for optional Replay Buffer/Virtual Camera handlers are classified as absent resources; their flags remain null. Unknown or failed streaming/recording state remains blocking. There is no atomic interlock with another operator, plugins, external encoders or projectors.
+## Reliability and privacy
 
-Completed scene, caption or mute edits remain after failure or cancel; inspect OBS after a partial failure. No automatic rollback, output shutdown or retry on reconnect is performed. Read-only audio observations never authorize writes.
+Live logic is separate from the accepted offline controllers. The renderer is sandboxed, with no Node access, no network access and sender-validated semantic IPC. Only localhost OBS endpoints are accepted. Command requests are serialized. Release/cancel remain reachable during a pending operation or native dialog. Each write checks session permissions, target collection/profile, cancellation and fresh OBS state; commands are read back before reporting completion. No automatic retries, rollback, output shutdown, or command replay on reconnect.
 
-No YouTube API, encoder start/stop, X32 controls, RØDECaster switching, PTZ commands or Companion button triggers are implemented. Global OBS state is not verified YouTube or external-encoder state. Full Bible text/verse validation, dual-language encoders, production recovery, durable logging, SQLite and signed/notarized distribution remain later work.
+Manual Program changes cancel pending automation. Manual mute is preserved across captions and returns. A manual mute during an audio-changing action interrupts that pending action. A failure can leave already completed scene/text/mute changes in place: inspect OBS before continuing.
+
+Activity is recorded in a local rotating `logs/live-service.jsonl` (three bounded files), with requested/acknowledged/verified/failed stages. Only local diagnostics are recorded, never passwords, raw OBS replies, stream keys or authentication tokens. **Activity log → Export activity log…** exports the recent retained entries. A journal write failure blocks further live changes rather than silently dropping the trail. Workspace/log exports can still reveal site information and should not be committed publicly.
+
+There is no atomic interlock with another operator, OBS plugins, external encoders, monitoring paths or projectors. Network acknowledgements do not certify viewer sound/video. Keep manual OBS/Stream Deck controls available. This remains unsigned/not notarized alpha software, not unattended production automation.
 
 ## Build and validation
 
-CI uses Node 24 and pinned direct dependencies. From this folder: `npm install`, `npm run typecheck`, `npm test`, `npm run build`. `npm run dist:mac` builds a universal DMG and ZIP. The workflow uploads its resolved dependency lock, package checksums, commit ID and test screenshots. A reviewed committed lockfile is still required before production distribution.
+CI uses Node 24 and the existing pinned direct dependencies. `npm run typecheck`, `npm test`, `npm run build`; `npm run dist:mac` creates universal macOS DMG/ZIP files. The test runner enables Node's TypeScript transformation for the new typed classes. CI uploads the resolved dependency lock, package hashes, commit ID and screenshots. A reviewed committed dependency lock and signed/notarized release remain future work.
 
-Regression tests retain the accepted caption, connection and read-only meter behavior. New tests cover the mute sequence, manual-mute preservation, unknown readback, cancellation and session-only opt-in. Electron smoke tests run the interface and IPC against authenticated synthetic localhost OBS peers. They do not contact church hardware or validate final broadcast sound.
+The suite retains previous authentication, offline-caption, audio-meter, mute-policy and readiness tests. New unit and authenticated-loopback tests cover non-disruptive joining, independent permissions, production collection support, manual overrides, cancelled/failed actions, stale status, start/stop sequencing and durable logs. The new Electron/IPC test exercises real UI permission/action buttons and a real ten-second return against a synthetic OBS peer. Test names and credentials are invented; no test accesses church equipment. A passing build is not physical-site acceptance.
 
-Download the `Broadcast-Control-Center-Preview-macOS` artifact from the successful **Control Center Preview - macOS** run. Install the DMG by replacing the previous Preview app; existing local workspace files remain compatible. Builds are unsigned and not notarized; use an app-specific macOS exception only for a build you trust, never disable Gatekeeper globally.
+Primary protocol: https://github.com/obsproject/obs-websocket/blob/master/docs/generated/protocol.md
