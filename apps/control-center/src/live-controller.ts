@@ -30,7 +30,7 @@ export class LiveController{
   private serviceId():string{return this.selected||selectService(this.workspace());}
   snapshot():LiveSnapshot{
     const o=this.observed,fresh=this.port.isConnected()&&o.checkedAt!==null&&this.clock.now()-o.checkedAt<6000;
-    const observation=fresh?{...o,scenes:[...o.scenes],warnings:[...o.warnings]}:{...o,streaming:null,reconnecting:null,muted:null,warnings:[...o.warnings,'Status is disconnected or stale; not confirmed off.']};
+    const observation=fresh?{...o,muted:this.working&&this.audioChanging?null:o.muted,scenes:[...o.scenes],warnings:[...o.warnings]}:{...o,streaming:null,reconnecting:null,muted:null,warnings:[...o.warnings,'Status is disconnected, pending verification or stale; not confirmed off.']};
     return {connected:this.port.isConnected(),observation,permissions:{...this.permissions},boundCollection:this.collection,phase:this.phase,selectedService:this.serviceId(),busy:this.working,pendingAction:this.operation,returnAt:this.returnAt,notice:this.notice,lastError:this.lastError,journalError:this.journalError,
       reasons:blockedActions(this.workspace(),o,this.permissions,this.port.isConnected(),this.working,this.serviceId(),this.clock.now(),this.journalError)};
   }
@@ -41,9 +41,10 @@ export class LiveController{
   private cancelTimer():void{if(this.timer!==null)this.clock.clear(this.timer);this.timer=null;this.returnAt=null;}
   release(message='Control released. OBS picture, audio and transmission were left unchanged.'):void{
     this.generation++;this.cancelTimer();this.permissions=noPermissions();this.collection='';this.profile='';this.mapping='';this.expected.clear();this.notice=message;
+    if(this.working)this.observed={...this.observed,checkedAt:null};
     this.note('release',message);this.emit();
   }
-  cancelReturn():void{this.generation++;this.cancelTimer();this.expected.clear();this.notice='Pending automation cancelled. Completed OBS changes remain.';this.note('cancel',this.notice);this.emit();}
+  cancelReturn():void{this.generation++;this.cancelTimer();this.expected.clear();this.notice='Pending automation cancelled. Completed OBS changes remain.';if(this.working)this.observed={...this.observed,checkedAt:null};this.note('cancel',this.notice);this.emit();}
   async disconnect():Promise<void>{this.release();if(this.interval)clearInterval(this.interval);this.interval=null;await this.port.disconnect();}
   async connect(password:string):Promise<void>{
     this.release('Connecting in Observe only mode.');this.connection++;if(this.interval)clearInterval(this.interval);this.interval=null;
@@ -83,7 +84,7 @@ export class LiveController{
       if(this.authorized&&(!next.collection||!next.profile||!next.program||next.streaming===null))this.release('Required OBS status is unknown. Control released without changing outputs.');
     }finally{this.polling=false;this.emit();}
   }
-  private interruptAutomation(message:string):void{this.generation++;this.cancelTimer();this.expected.clear();this.notice=message;this.note('manual-priority',message);}
+  private interruptAutomation(message:string):void{this.generation++;this.cancelTimer();this.expected.clear();this.notice=message;if(this.working)this.observed={...this.observed,checkedAt:null};this.note('manual-priority',message);}
   private expectedEvent(key:string,value:unknown):boolean{
     const e=this.expected.get(key);if(e&&e.until>=this.clock.now()&&JSON.stringify(e.value)===JSON.stringify(value)){this.expected.delete(key);return true;}return false;
   }
@@ -195,7 +196,7 @@ export class LiveController{
       }
       this.notice=command==='prepare'?'Preflight completed without changing OBS. Each feature has its own readiness check.':'Action confirmed by OBS. No automatic retry or rollback is scheduled.';
     }catch(error){
-      this.lastError=safeLiveError(error);this.release('Action stopped. Completed changes may remain in OBS. Review before enabling control again.');
+      this.lastError=safeLiveError(error);this.observed={...this.observed,checkedAt:null};this.release('Action stopped. Completed changes may remain in OBS. Review before enabling control again.');
       await this.record(command,'failed',this.lastError).catch(()=>{});throw new LiveFailure(this.lastError);
     }finally{this.expected.delete('stream');this.audioChanging=false;this.working=false;this.operation='';this.emit();}
   }
