@@ -34,19 +34,19 @@ jobs:
       - name: Build application
         run: npm run build
       - name: Smoke-test Electron startup and rehearsal
-        run: ./node_modules/.bin/electron scripts/smoke.cjs
+        run: ./node_modules/.bin/electron scripts/run-smoke.cjs smoke.cjs
       - name: Smoke-test authenticated OBS connection and password retry
-        run: ./node_modules/.bin/electron scripts/smoke-obs.cjs
+        run: ./node_modules/.bin/electron scripts/run-smoke.cjs smoke-obs.cjs
       - name: Smoke-test offline Program and captions against synthetic OBS
-        run: ./node_modules/.bin/electron scripts/smoke-offline.cjs
+        run: ./node_modules/.bin/electron scripts/run-smoke.cjs smoke-offline.cjs
       - name: Smoke-test read-only audio verification and routing notes
-        run: ./node_modules/.bin/electron scripts/smoke-audio.cjs
+        run: ./node_modules/.bin/electron scripts/run-smoke.cjs smoke-audio.cjs
       - name: Smoke-test opt-in service mute workflow and manual-mute preservation
-        run: ./node_modules/.bin/electron scripts/smoke-service-audio.cjs
+        run: ./node_modules/.bin/electron scripts/run-smoke.cjs smoke-service-audio.cjs
       - name: Smoke-test readiness explanations and independent Simulation buttons
-        run: ./node_modules/.bin/electron scripts/smoke-readiness.cjs
+        run: ./node_modules/.bin/electron scripts/run-smoke.cjs smoke-readiness.cjs
       - name: Smoke-test Live Service join, permissions, caption timer and stream lifecycle
-        run: ./node_modules/.bin/electron scripts/smoke-live.cjs
+        run: ./node_modules/.bin/electron scripts/run-smoke.cjs smoke-live.cjs
       - name: Build universal Mac app
         run: npm run dist:mac
       - name: Record build identity and package checksums
