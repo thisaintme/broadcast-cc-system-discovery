@@ -1,0 +1,35 @@
+name: Control Center validation
+on:
+  push:
+    branches: [main, control-center-m1]
+    paths:
+      - 'apps/control-center/**'
+      - '.github/workflows/control-center-validation.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: control-center-validation-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  validate:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: apps/control-center
+    env:
+      ELECTRON_SKIP_BINARY_DOWNLOAD: '1'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - name: Install pinned dependencies without Electron binary
+        run: npm install --no-audit --no-fund
+      - name: Typecheck
+        run: npm run typecheck
+      - name: Domain, permission, transport and persistence regressions
+        run: npm test
+      - name: Build both application entry points
+        run: npm run build
