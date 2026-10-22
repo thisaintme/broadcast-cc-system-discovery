@@ -14,6 +14,7 @@ import {LiveJournal} from './live-journal.ts';
 import {LiveFailure,LIVE_COMMANDS,normalizePermissions,safeLiveError} from './live-contract.ts';
 import type {LiveCommand,LivePhase} from './live-contract.ts';
 import type {LiveSiteSnapshot} from './live-app.ts';
+import {applyServiceChange} from './live-schedule.ts';
 protocol.registerSchemesAsPrivileged([{scheme:'bcc',privileges:{standard:true,secure:true,supportFetchAPI:true}}]);
 let window:BrowserWindow|null=null,workspace:Workspace=blankWorkspace(),busy=false,quitting=false,companionResult='Not inspected';
 const peer=new LiveObs();
@@ -62,10 +63,19 @@ app.whenReady().then(async()=>{
   handle('live:save',async(raw:unknown)=>{
     editable();let next:Workspace;try{next=validateWorkspace(raw);}catch{throw new LiveFailure('Workspace values are invalid. Check dates, names and local connection URLs.');}
     next.inventory=workspace.inventory;next.connections=workspace.connections;next.audioObservations=workspace.audioObservations;
+    // Schedule commands use the latest main-process state, not a stale mapping draft.
+    next.services=workspace.services;
     // Live permissions do not use or persist the legacy offline confirmation flags.
     next.bindings.confirmed=false;next.captions.confirmed=false;
     live.release('Configuration saved locally; enabling live control is a separate action.');
     if(next.obsUrl!==workspace.obsUrl)await live.disconnect();await save(next);await live.refresh();return state();
+  });
+  handle('live:services',async(change:unknown)=>{
+    // Local schedule editing is independent of OBS transmission and live permissions.
+    // The existing operation mutex serializes saves. A caption countdown is not a
+    // configuration edit and is deliberately neither cancelled nor restarted here.
+    const next=applyServiceChange(workspace,change,live.snapshot().selectedService);
+    await save(next);return state();
   });
   handle('live:import',async()=>{
     editable();const pick=await dialog.showOpenDialog(window!,{title:'Import local workspace or discovery report',properties:['openFile'],filters:[{name:'JSON',extensions:['json']}]});

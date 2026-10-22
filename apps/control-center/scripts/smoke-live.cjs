@@ -29,13 +29,51 @@ async function finish(code,error){if(finished)return;finished=true;clearTimeout(
         await field('live-obs-password',peer.password);await click('connect-live-obs');
         await wait("window.liveService.site().then(s=>s.workspace.inventory?.origin==='live' && !s.live.busy)");assert.equal(await evaluate("document.getElementById('live-obs-password').value"),'');
         assert.equal(peer.state.writes.length,0);assert.equal(peer.state.streaming,true);
-        await click('nav-live');await click('permission-scenes');await click('enable-live');
+        await click('nav-live');await field('live-service','one',true);await click('permission-scenes');await click('enable-live');
         assert.equal(grants,1);assert.equal(await evaluate("window.liveService.snapshot().then(s=>s.permissions.scenes)"),false);assert.equal(peer.state.writes.length,0);
         allowGrant=true;await click('enable-live');await wait("window.liveService.snapshot().then(s=>s.permissions.scenes)");assert.equal(peer.state.writes.length,0);
         assert.equal(await evaluate("document.getElementById('live-start').disabled"),true);
         await field('live-speaker-select','Speaker B',true);await click('live-speaker');await wait("window.liveService.snapshot().then(s=>s.observation.program==='Speaker' && !s.busy)");
         peer.state.mutes.Microphone=true;peer.emit('InputMuteStateChanged',{inputName:'Microphone',inputMuted:true});
+
+        // Regression: the schedule remains editable with live control and a pending return.
+        const beforeSchedule=await evaluate('window.liveService.site()');
+        const scheduleWrites=peer.state.writes.length,oldNext=JSON.stringify(peer.state.settings['Next date']);
+        await click('nav-schedule');
+        assert.equal(await evaluate("document.getElementById('new-service-time').disabled"),false);
+        assert.equal(await evaluate("document.getElementById('new-live-speaker').disabled"),true);
+        assert.equal(await evaluate("document.querySelector('[data-remove-service=one]').disabled"),true);
+        await field('service-title-preset','Andacht',true);await field('new-service-time','2026-10-27T12:00');
+        await click('add-live-service');await wait("window.liveService.site().then(s=>s.workspace.services.length===3 && !s.live.busy)");
+        const firstSchedule=await evaluate('window.liveService.site()');
+        assert.equal(firstSchedule.workspace.services[1].title,'20261027 - Andacht');
+        assert.equal(firstSchedule.live.selectedService,'one');
+        assert.deepEqual(firstSchedule.live.permissions,beforeSchedule.live.permissions);
+        assert.equal(firstSchedule.live.returnAt,beforeSchedule.live.returnAt);
+        assert.equal(firstSchedule.live.phase,'speaker');assert.equal(peer.state.writes.length,scheduleWrites);
+        assert.equal(JSON.stringify(peer.state.settings['Next date']),oldNext);
+        assert.equal(peer.state.streaming,true);assert.equal(peer.state.mutes.Microphone,true);
+        assert.deepEqual(firstSchedule.workspace.bindings,beforeSchedule.workspace.bindings);
+        assert.deepEqual(firstSchedule.workspace.captions,beforeSchedule.workspace.captions);
+        assert.equal(firstSchedule.workspace.inventory.origin,'live');
+        const protectedError=await evaluate("window.liveService.changeServices({type:'remove',id:'one'}).then(()=>'',e=>e.message)");assert.match(protectedError,/selected service cannot be removed/i);
+        const injectionError=await evaluate("window.liveService.changeServices({type:'add',service:{id:'bad',title:'Bad',startsAt:'2026-11-01T10:00:00Z'},bindings:{audioInput:'Other input'}}).then(()=>'',e=>e.message)");assert.match(injectionError,/Only service schedule fields/);
+        assert.equal(await evaluate("window.liveService.site().then(s=>window.liveService.saveWorkspace(s.workspace)).then(()=>false,()=>true)"),true);
+        // A second add merges with the first; remove an unselected entry using the actual UI.
+        await field('new-service-time','2026-11-08T12:00');await click('add-live-service');
+        await wait("window.liveService.site().then(s=>s.workspace.services.length===4 && !s.live.busy)");
+        const extra=await evaluate("window.liveService.site().then(s=>s.workspace.services.find(x=>x.title==='20261108 - Andacht'))");
+        await evaluate(`document.querySelector(${JSON.stringify('[data-remove-service="'+extra.id+'"]')}).click()`);
+        await wait("window.liveService.site().then(s=>s.workspace.services.length===3 && !s.live.busy)");
+        assert.equal(peer.state.writes.length,scheduleWrites);
+        const during=await evaluate('window.liveService.snapshot()');assert.equal(during.returnAt,beforeSchedule.live.returnAt);assert.equal(during.selectedService,'one');
+        const persisted=JSON.parse(fs.readFileSync(path.join(dir,'workspace.json'),'utf8'));
+        assert.deepEqual(persisted.services,firstSchedule.workspace.services);
+        await click('nav-live');assert.match(await evaluate("document.getElementById('next-live-service').textContent"),/27 Oct 2026/);
         await wait("window.liveService.snapshot().then(s=>s.observation.program==='Main' && !s.busy)",15000);assert.equal(peer.state.mutes.Microphone,true);
+        assert.deepEqual(peer.state.writes.slice(scheduleWrites).map(x=>x.name),['SetCurrentProgramScene']);
+        assert.equal(await evaluate("window.liveService.snapshot().then(s=>s.permissions.scenes)"),true);
+
         await click('live-bible');await wait("window.liveService.snapshot().then(s=>s.observation.program==='Bible' && !s.busy)");
         peer.state.program='Outro';peer.emit('CurrentProgramSceneChanged',{sceneName:'Outro'});await wait("window.liveService.snapshot().then(s=>s.returnAt===null)");
         await click('release-live');await wait("window.liveService.snapshot().then(s=>!s.permissions.scenes)");assert.equal(peer.state.streaming,true);
@@ -46,9 +84,25 @@ async function finish(code,error){if(finished)return;finished=true;clearTimeout(
         const count=peer.state.writes.length;await click('live-stop');assert.equal(stops,1);assert.equal(peer.state.writes.length,count);assert.equal(peer.state.streaming,true);
         allowStop=true;await click('live-stop');await wait("window.liveService.snapshot().then(s=>s.observation.streaming===false && !s.busy)");assert.equal(peer.state.streaming,false);
         await click('live-start');await wait("window.liveService.snapshot().then(s=>s.observation.streaming===true && s.observation.program==='Intro' && !s.busy)");assert.equal(peer.state.mutes.Microphone,true);
-        await click('release-live');assert.equal(peer.state.streaming,true);const log=await evaluate('window.liveService.journal()');assert.ok(log.some(x=>x.action==='start'&&x.stage==='completed'));assert.ok(!JSON.stringify(log).includes(peer.password));
+        await click('release-live');assert.equal(peer.state.streaming,true);
+
+        // Saving a schedule must neither discard nor authorize unrelated draft settings.
+        const finalWrites=peer.state.writes.length;
+        await click('nav-setup');await field('live-audio-input','Other input',true);
+        await click('nav-schedule');await field('service-title-preset','custom',true);
+        await field('new-service-custom-title','Custom gathering');await field('new-service-time','2026-11-15T12:00');await click('add-live-service');
+        await wait("window.liveService.site().then(s=>s.workspace.services.length===4 && !s.live.busy)");
+        await click('nav-setup');assert.equal(await evaluate("document.getElementById('live-audio-input').value"),'Other input');
+        assert.equal(await evaluate("window.liveService.site().then(s=>s.workspace.bindings.audioInput)"),'Microphone');
+        await click('discard-live-mappings');assert.equal(await evaluate("document.getElementById('live-audio-input').value"),'Microphone');
+        const staleWorkspace=await evaluate('window.liveService.site().then(s=>s.workspace)');
+        await evaluate("window.liveService.changeServices({type:'add',service:{id:'stale-proof',title:'Later service',startsAt:'2026-11-22T10:00:00Z'}})");
+        await evaluate(`window.liveService.saveWorkspace(${JSON.stringify(staleWorkspace)})`);
+        assert.equal(await evaluate("window.liveService.site().then(s=>s.workspace.services.some(x=>x.id==='stale-proof'))"),true);
+        assert.equal(peer.state.writes.length,finalWrites);assert.equal(peer.state.streaming,true);
+        const log=await evaluate('window.liveService.journal()');assert.ok(log.some(x=>x.action==='start'&&x.stage==='completed'));assert.ok(!JSON.stringify(log).includes(peer.password));
         const stored=fs.readFileSync(path.join(dir,'workspace.json'),'utf8');assert.ok(!stored.includes(peer.password));assert.ok(!stored.includes('livePermissions'));
-        console.log('Live UI acceptance passed: authenticated join without changes, consent cancellation, independent permissions, actual caption timer preserving manual mute, external override, stop confirmation, start sequencing, persistent log and release leaving OBS running.');await finish(0);
+        console.log('Live UI acceptance passed: authenticated join, permissions, actual caption timer/manual mute, live schedule add/remove without extra OBS writes, selected-service protection, persistence, retained unsaved mappings, stale-settings-save protection, external override, start/stop and release.');await finish(0);
       }catch(error){await finish(1,error);}
     });
   });
