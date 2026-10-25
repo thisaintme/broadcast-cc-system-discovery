@@ -1,0 +1,10 @@
+node_modules/
+dist/
+release/
+*.companionconfig
+*system-report*.json
+*site-profile*.json
+*workspace*.json
+*.log
+.env*
+.DS_Store
