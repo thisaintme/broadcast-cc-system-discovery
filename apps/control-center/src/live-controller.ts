@@ -1,16 +1,18 @@
-import type {Workspace,Role,Reader} from './model.ts';
+import type {Workspace,Role} from './model.ts';
 import {selectService} from './workspace.ts';
 import {executeLiveAction} from './live-actions.ts';
 import {blockedActions,commandPermissions,requireAudio} from './live-validation.ts';
 import {expectedStreamEvent,duplicateTerminalStreamEvent} from './live-events.ts';
 import {LIVE_COMMANDS,LiveFailure,emptyObservation,noPermissions,normalizePermissions,safeLiveError,liveMappingKey} from './live-contract.ts';
 import type {LiveCommand,LiveObservation,LivePermissions,LivePhase,LivePort,LiveRead,LiveSnapshot,LiveWrite,JournalPort} from './live-contract.ts';
+import {parseOperatorAction,executeOperatorAction,operatorRequests,readOperatorView} from './obs-operator.ts';
+import type {OperatorReader,OperatorView} from './obs-operator.ts';
 export interface LiveClock{now():number;set(fn:()=>void,ms:number):unknown;clear(handle:unknown):void}
 const realClock:LiveClock={now:()=>Date.now(),set:(fn,ms)=>setTimeout(fn,ms),clear:h=>clearTimeout(h as ReturnType<typeof setTimeout>)};
 const str=(x:unknown)=>typeof x==='string'?x:'';
 const num=(x:unknown)=>typeof x==='number'&&Number.isFinite(x)&&x>=0?x:null;
 const flag=(x:unknown)=>typeof x==='boolean'?x:null;
-/** Live control has its own session. Legacy offline guards remain unchanged. */
+/** Service cues and the optional operator desk share one serialized, cancellable session. */
 export class LiveController{
   private observed=emptyObservation();private permissions=noPermissions();
   private collection='';private profile='';private mapping='';private phase:LivePhase='unknown';private selected='';
@@ -18,13 +20,13 @@ export class LiveController{
   private generation=0;private revision=0;private connection=0;private polling=false;
   private interval:ReturnType<typeof setInterval>|null=null;
   private expected=new Map<string,{value:unknown;until:number}>();private available=new Set<string>();
-  private audioChanging=false;private audioRevision=0;
+  private audioChanging=false;private audioRevision=0;private operatorInput='';private operatorKind='';
   private notice='Observe only. Connecting never changes OBS outputs.';private lastError='';private journalError='';
   constructor(private workspace:()=>Workspace,private port:LivePort,private journal:JournalPort,private emit:()=>void,private clock:LiveClock=realClock){
     port.onEvent=(name,data)=>this.event(name,data);
     port.onDisconnect=()=>{this.connection++;this.observed=emptyObservation();this.release('OBS disconnected. Pending actions cancelled; outputs were not stopped.');};
   }
-  get authorized():boolean{return this.permissions.scenes||this.permissions.audio||this.permissions.stream;}
+  get authorized():boolean{return this.permissions.scenes||this.permissions.audio||this.permissions.stream||this.permissions.operator===true;}
   get busy():boolean{return this.working;}
   ticket():number{return this.generation;}
   private serviceId():string{return this.selected||selectService(this.workspace());}
@@ -33,6 +35,12 @@ export class LiveController{
     const observation=fresh?{...o,muted:this.working&&this.audioChanging?null:o.muted,scenes:[...o.scenes],warnings:[...o.warnings]}:{...o,streaming:null,reconnecting:null,muted:null,warnings:[...o.warnings,'Status is disconnected, pending verification or stale; not confirmed off.']};
     return {connected:this.port.isConnected(),observation,permissions:{...this.permissions},boundCollection:this.collection,phase:this.phase,selectedService:this.serviceId(),busy:this.working,pendingAction:this.operation,returnAt:this.returnAt,notice:this.notice,lastError:this.lastError,journalError:this.journalError,
       reasons:blockedActions(this.workspace(),o,this.permissions,this.port.isConnected(),this.working,this.serviceId(),this.clock.now(),this.journalError)};
+  }
+  async operatorData(raw:unknown):Promise<OperatorView>{
+    if(this.working||!this.port.isConnected())throw new LiveFailure('Wait for the current action and an OBS connection before reading the operator panel.');
+    const connection=this.connection,key=liveMappingKey(this.workspace());
+    const valid=()=>connection===this.connection&&this.port.isConnected()&&!this.working&&key===liveMappingKey(this.workspace());
+    return readOperatorView({read:(n,d={})=>this.read(n,d,valid)},raw);
   }
   private async record(action:string,stage:string,detail:string):Promise<void>{
     try{await this.journal.append(action,stage,detail);}catch{this.journalError='Local activity log could not be written. Live changes are blocked; use OBS manually.';this.emit();throw new LiveFailure(this.journalError);}
@@ -95,12 +103,23 @@ export class LiveController{
       if(!this.expectedEvent('program',program)&&program!==this.observed.program)this.interruptAutomation('OBS Program changed manually; pending app actions cancelled.');
       this.observed={...this.observed,program};this.phase=this.infer(program);this.emit();return;
     }
-    if(name==='InputMuteStateChanged'&&d.inputName===this.workspace().bindings.audioInput){
-      this.revision++;const known=this.expectedEvent('mute',d.inputMuted);
-      if(!known&&(typeof d.inputMuted!=='boolean'||d.inputMuted!==this.observed.muted)){
+    if(name==='CurrentPreviewSceneChanged'&&this.operatorKind==='preview'){
+      if(!this.expectedEvent('preview',d.sceneName))this.interruptAutomation('Preview changed outside the requested selection.');this.emit();return;
+    }
+    if(name==='StudioModeStateChanged'&&this.operation==='operator'){
+      if(!this.expectedEvent('studio',d.studioModeEnabled))this.interruptAutomation('Studio Mode changed outside this operator action.');this.emit();return;
+    }
+    if(name==='InputVolumeChanged'&&this.operatorKind==='volume'&&d.inputName===this.operatorInput){
+      const target=this.expected.get('volume');
+      if(!target||typeof target.value!=='number'||typeof d.inputVolumeDb!=='number'||Math.abs(target.value-d.inputVolumeDb)>0.1)this.interruptAutomation('Input level changed outside this operator action.');
+      this.emit();return;
+    }
+    if(name==='InputMuteStateChanged'&&(d.inputName===this.workspace().bindings.audioInput||(this.audioChanging&&d.inputName===this.operatorInput))){
+      this.revision++;const known=this.expectedEvent('mute',d.inputMuted),service=d.inputName===this.workspace().bindings.audioInput;
+      if(!known&&(typeof d.inputMuted!=='boolean'||!service||d.inputMuted!==this.observed.muted)){
         this.audioRevision++;if(this.audioChanging)this.interruptAutomation('Manual mute change took priority over the pending audio action.');
       }
-      this.observed={...this.observed,muted:flag(d.inputMuted)};this.emit();return;
+      if(service)this.observed={...this.observed,muted:flag(d.inputMuted)};this.emit();return;
     }
     if(name==='StreamStateChanged'){
       this.revision++;const target=this.expected.get('stream');
@@ -109,7 +128,7 @@ export class LiveController{
       this.observed={...this.observed,streaming:flag(d.outputActive),reconnecting:d.outputState==='OBS_WEBSOCKET_OUTPUT_RECONNECTING'?true:['OBS_WEBSOCKET_OUTPUT_RECONNECTED','OBS_WEBSOCKET_OUTPUT_STARTED','OBS_WEBSOCKET_OUTPUT_STOPPED'].includes(d.outputState)?false:this.observed.reconnecting};this.emit();return;
     }
     if(name==='InputSettingsChanged'){
-      const w=this.workspace();if(![w.bindings.bibleText,w.bindings.nextServiceText,...w.captions.speakerPool].includes(d.inputName))return;
+      const w=this.workspace();if(![w.bindings.bibleText,w.bindings.nextServiceText,...w.captions.speakerPool,...(this.operatorKind==='text'?[this.operatorInput]:[])].includes(d.inputName))return;
       if(!this.expectedEvent('text:'+d.inputName,d.inputSettings?.text))this.interruptAutomation('A controlled caption changed externally; pending app actions cancelled.');this.emit();return;
     }
     if(name==='SceneItemEnableStateChanged'){
@@ -121,7 +140,7 @@ export class LiveController{
   }
   async checkGrant(raw:LivePermissions):Promise<{ticket:number;collection:string;profile:string}>{
     if(this.working)throw new LiveFailure('An action is still in progress.');
-    const p=normalizePermissions(raw);if(!p.scenes&&!p.audio&&!p.stream)throw new LiveFailure('Select at least one control permission.');
+    const p=normalizePermissions(raw);if(!p.scenes&&!p.audio&&!p.stream&&!p.operator)throw new LiveFailure('Select at least one control permission.');
     if(this.journalError)throw new LiveFailure(this.journalError);
     const ticket=this.generation,connection=this.connection,o=await this.query(),w=this.workspace();
     const valid=()=>ticket===this.generation&&connection===this.connection&&this.port.isConnected();
@@ -137,7 +156,7 @@ export class LiveController{
     if(ticket!==this.generation)throw new LiveFailure('Authorization was cancelled.');
     const p=normalizePermissions(raw),checked=await this.checkGrant(p);
     if(ticket!==checked.ticket)throw new LiveFailure('OBS changed during authorization.');
-    await this.record('permissions','approved',`Scenes/captions: ${p.scenes}; service audio: ${p.audio}; OBS start/stop: ${p.stream}. Enabling sends no output changes.`);
+    await this.record('permissions','approved',`Scenes/captions: ${p.scenes}; service audio: ${p.audio}; OBS start/stop: ${p.stream}; operator desk: ${p.operator===true}. Enabling sends no output changes.`);
     if(ticket!==this.generation)throw new LiveFailure('Authorization was cancelled.');
     this.permissions=p;this.collection=checked.collection;this.profile=checked.profile;this.mapping=liveMappingKey(this.workspace());
     this.phase=this.infer(this.observed.program);this.lastError='';this.notice='Live control enabled. Current OBS state adopted without changing the broadcast.';this.emit();
@@ -149,14 +168,18 @@ export class LiveController{
   }
   async command(command:LiveCommand,value=''):Promise<void>{
     if(!LIVE_COMMANDS.includes(command))throw new LiveFailure('Unknown live action.');
+    const operator=command==='operator'?parseOperatorAction(value):null;
     await this.refresh();const reasons=this.snapshot().reasons[command];if(reasons.length)throw new LiveFailure(reasons.join(' '));
+    if(operator&&(operator.collection!==this.observed.collection||operator.profile!==this.observed.profile))throw new LiveFailure('Operator target changed. Refresh the panel before sending another action.');
     this.cancelTimer();const token=++this.generation,connection=this.connection;
-    this.working=true;this.operation=command;this.lastError='';this.emit();
+    this.working=true;this.operation=command;this.lastError='';
     const w=this.workspace(),key=liveMappingKey(w),serviceId=this.serviceId();
-    this.audioChanging=commandPermissions(command).audio;const audioRevision=this.audioRevision;let streamIssued=false;
+    this.audioChanging=commandPermissions(command).audio||!!operator&&['mute','volume'].includes(operator.kind);
+    this.operatorInput=operator&&'input' in operator?operator.input:'';this.operatorKind=operator?.kind||'';this.emit();
+    const audioRevision=this.audioRevision;let streamIssued=false;
     let permittedPrograms=new Set([this.observed.program]),pendingProgram:string|null=null;
     const valid=()=>token===this.generation&&connection===this.connection&&this.port.isConnected()&&liveMappingKey(this.workspace())===key&&this.mapping===key&&(!this.audioChanging||audioRevision===this.audioRevision);
-    const reader:Reader={read:(n,d={})=>this.read(n,d,valid)};
+    const reader:OperatorReader={read:(n,d={})=>this.read(n,d,valid)};
     const check=async():Promise<LiveObservation>=>{
       if(!valid())throw new LiveFailure('Action interrupted; no further commands sent.');
       const o=await this.query();if(!valid())throw new LiveFailure('Action interrupted.');
@@ -168,15 +191,26 @@ export class LiveController{
     };
     const change=async(name:LiveWrite,data:Record<string,unknown>={})=>{
       await check();const p=this.permissions;
-      if((['SetInputSettings','SetSceneItemEnabled','SetCurrentProgramScene'].includes(name)&&!p.scenes)||(name==='SetInputMute'&&!p.audio)||(['StartStream','StopStream'].includes(name)&&!p.stream))throw new LiveFailure('Permission was released.');
-      if(name==='SetInputMute'&&(data.inputName!==w.bindings.audioInput||typeof data.inputMuted!=='boolean'))throw new LiveFailure('Service-input mismatch.');
-      if(name==='StartStream'&&command!=='start')throw new LiveFailure('Start requires its separate confirmed action.');
-      if(name==='StopStream'&&command!=='stop')throw new LiveFailure('Stop requires its separate confirmed action.');
+      if(operator){
+        if(!p.operator||!operatorRequests(operator).includes(name)||name==='StartStream'||name==='StopStream')throw new LiveFailure('The operator action does not authorize this request.');
+      }else{
+        if((['SetInputSettings','SetSceneItemEnabled','SetCurrentProgramScene'].includes(name)&&!p.scenes)||(name==='SetInputMute'&&!p.audio)||(['StartStream','StopStream'].includes(name)&&!p.stream))throw new LiveFailure('Permission was released.');
+        if(name==='SetInputMute'&&(data.inputName!==w.bindings.audioInput||typeof data.inputMuted!=='boolean'))throw new LiveFailure('Service-input mismatch.');
+        if(name==='StartStream'&&command!=='start')throw new LiveFailure('Start requires its separate confirmed action.');
+        if(name==='StopStream'&&command!=='stop')throw new LiveFailure('Stop requires its separate confirmed action.');
+      }
       await this.record(command,'requested',name);await check();
+      if(name==='TriggerStudioModeTransition'){
+        if(!operator||operator.kind!=='take'||(await reader.read('GetStudioModeEnabled')).studioModeEnabled!==true||(await reader.read('GetCurrentPreviewScene')).currentPreviewSceneName!==operator.scene)throw new LiveFailure('Studio Preview changed before the transition. No transition was sent.');
+        pendingProgram=operator.scene;permittedPrograms.add(pendingProgram);this.expected.set('program',{value:pendingProgram,until:this.clock.now()+15000});
+      }
       if(name==='SetCurrentProgramScene'){
         pendingProgram=String(data.sceneName);permittedPrograms.add(pendingProgram);
         this.expected.set('program',{value:data.sceneName,until:this.clock.now()+12000});
       }
+      if(name==='SetCurrentPreviewScene')this.expected.set('preview',{value:data.sceneName,until:this.clock.now()+5000});
+      if(name==='SetStudioModeEnabled')this.expected.set('studio',{value:data.studioModeEnabled,until:this.clock.now()+5000});
+      if(name==='SetInputVolume')this.expected.set('volume',{value:data.inputVolumeDb,until:this.clock.now()+5000});
       if(name==='SetInputSettings')this.expected.set('text:'+data.inputName,{value:(data.inputSettings as any).text,until:this.clock.now()+5000});
       if(name==='SetSceneItemEnabled')this.expected.set('item:'+JSON.stringify([data.sceneName,data.sceneItemId]),{value:data.sceneItemEnabled,until:this.clock.now()+5000});
       if(name==='SetInputMute')this.expected.set('mute',{value:data.inputMuted,until:this.clock.now()+5000});
@@ -187,9 +221,10 @@ export class LiveController{
     };
     try{
       await this.record(command,'began','Operator action started.');await check();
-      const phase=await executeLiveAction({workspace:w,reader,serviceId,permissions:()=>({...this.permissions}),check,change,verified:detail=>this.record(command,'verified',detail)},command,value);
+      const context={workspace:w,reader,serviceId,permissions:()=>({...this.permissions}),check,change,verified:(detail:string)=>this.record(command,'verified',detail)};
+      const phase=operator?await executeOperatorAction(context,operator):await executeLiveAction(context,command,value);
       await check();await this.record(command,'completed','Requested action completed and read back.');
-      if(!valid())throw new LiveFailure('Action was interrupted.');if(phase)this.phase=phase;
+      if(!valid())throw new LiveFailure('Action was interrupted.');if(phase)this.phase=phase;else if(operator)this.phase=this.infer(this.observed.program);
       if(command==='speaker'||command==='bible'){
         const expectedScene=w.bindings.scenes[command];this.returnAt=this.clock.now()+10000;
         this.timer=this.clock.set(()=>{void this.returnMain(token,expectedScene);},10000);
@@ -198,7 +233,7 @@ export class LiveController{
     }catch(error){
       this.lastError=safeLiveError(error);this.observed={...this.observed,checkedAt:null};this.release('Action stopped. Completed changes may remain in OBS. Review before enabling control again.');
       await this.record(command,'failed',this.lastError).catch(()=>{});throw new LiveFailure(this.lastError);
-    }finally{this.expected.delete('stream');this.audioChanging=false;this.working=false;this.operation='';this.emit();}
+    }finally{this.expected.delete('stream');this.expected.delete('volume');this.audioChanging=false;this.operatorInput='';this.operatorKind='';this.working=false;this.operation='';this.emit();}
   }
   private async returnMain(token:number,expectedScene:string):Promise<void>{
     if(token!==this.generation||this.working||!this.permissions.scenes)return;this.cancelTimer();

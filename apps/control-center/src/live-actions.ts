@@ -1,11 +1,12 @@
-import type {Reader,Role,Workspace} from './model.ts';
+import type {Role,Workspace} from './model.ts';
 import type {LiveCommand,LiveObservation,LivePhase,LiveWrite,LivePermissions} from './live-contract.ts';
+import type {OperatorReader} from './obs-operator.ts';
 import {LiveFailure} from './live-contract.ts';
 import {nextServiceCaption} from './offline.ts';
 import {text} from './workspace.ts';
 import {requireScene,requireText,requireSpeakerGroup,requireAudio,textSettings,commandPermissions} from './live-validation.ts';
 export interface LiveActionContext {
-  workspace:Workspace; reader:Reader; serviceId:string;
+  workspace:Workspace; reader:OperatorReader; serviceId:string;
   permissions():LivePermissions;
   check():Promise<LiveObservation>;
   change(name:LiveWrite,data?:Record<string,unknown>):Promise<void>;

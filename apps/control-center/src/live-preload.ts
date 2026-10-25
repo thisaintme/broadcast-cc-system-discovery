@@ -5,7 +5,7 @@ const api:LiveAppBridge={
   site:()=>ipcRenderer.invoke('live:site'),snapshot:()=>ipcRenderer.invoke('live:snapshot'),
   onSite,onState:callback=>onSite(s=>callback(s.live)),
   connect:password=>ipcRenderer.invoke('live:connect',password),saveWorkspace:w=>ipcRenderer.invoke('live:save',w),
-  changeServices:change=>ipcRenderer.invoke('live:services',change),
+  changeServices:change=>ipcRenderer.invoke('live:services',change),operatorData:query=>ipcRenderer.invoke('live:operator-data',query),
   importWorkspace:()=>ipcRenderer.invoke('live:import'),exportWorkspace:()=>ipcRenderer.invoke('live:export'),
   inspectCompanion:()=>ipcRenderer.invoke('live:companion'),
   enable:p=>ipcRenderer.invoke('live:enable',p),release:()=>ipcRenderer.invoke('live:release'),cancelReturn:()=>ipcRenderer.invoke('live:cancel-return'),

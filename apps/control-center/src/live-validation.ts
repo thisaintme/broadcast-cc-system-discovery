@@ -6,9 +6,10 @@ export function enabledPaths(nodes:SceneNode[],root:string,target:string):number
   const walk=(name:string,trail:string[]):number=>{
     if(trail.includes(name)||trail.length>20)return 0;
     const n=nodes.find(x=>x.name===name);if(!n)throw new LiveFailure('A caption container is unavailable. Inspect OBS again.');
-    return n.items.reduce((sum,i)=>sum+(!i.enabled?0:(i.source===target?1:0)+((i.group||i.container)?walk(i.source,[...trail,name]):0)),0);
+    return n.items.reduce((sum,i)=>sum+(!i.enabled?0:(i.source===target?1:0)+((i.group||i.container)?walk(i.source,activeTrail(name,trail)):0)),0);
   };return walk(root,[]);
 }
+function activeTrail(name:string,trail:string[]):string[]{return [...trail,name];}
 export async function requireScene(reader:Reader,w:Workspace,role:Role):Promise<string>{
   const name=w.bindings.scenes[role],list=await reader.read('GetSceneList');
   if(!name||!Array.isArray(list.scenes)||!list.scenes.some((s:any)=>s.sceneName===name))throw new LiveFailure(`Map an existing ${role} scene in Connections & mappings.`);
@@ -46,7 +47,7 @@ export async function requireAudio(reader:Reader,w:Workspace):Promise<boolean>{
 }
 export const commandPermissions=(c:LiveCommand):LivePermissions=>({
   scenes:['prepare','intro','start','on-air','main','speaker','bible','outro'].includes(c),
-  audio:['intro','start','on-air','outro','mute','unmute'].includes(c),stream:c==='start'||c==='stop',
+  audio:['intro','start','on-air','outro','mute','unmute'].includes(c),stream:c==='start'||c==='stop',...(c==='operator'?{operator:true}:{}),
 });
 /** Missing features block their own actions, not unrelated mapped functions. */
 export function blockedActions(w:Workspace,o:LiveObservation,p:LivePermissions,connected:boolean,busy:boolean,serviceId:string,now:number,journalError=''):Record<LiveCommand,string[]>{
@@ -59,6 +60,7 @@ export function blockedActions(w:Workspace,o:LiveObservation,p:LivePermissions,c
     if(need.scenes&&!p.scenes)reasons.push('Enable Scenes and captions permission.');
     if(need.audio&&!p.audio)reasons.push('Enable Service audio permission.');
     if(need.stream&&!p.stream)reasons.push('Enable OBS start/stop permission.');
+    if(need.operator&&!p.operator)reasons.push('Enable OBS operator desk permission on Live Service.');
     const role:Role|undefined=c==='start'||c==='prepare'?'intro':c==='on-air'?'main':['intro','main','speaker','bible','outro'].includes(c)?c as Role:undefined;
     if(role&&(!w.bindings.scenes[role]||!o.scenes.includes(w.bindings.scenes[role])))reasons.push(`Map the ${role} scene.`);
     if((c==='speaker'||c==='bible')&&!o.scenes.includes(w.bindings.scenes.main))reasons.push('Map Main for the timed return.');

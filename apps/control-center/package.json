@@ -1,8 +1,8 @@
 {
   "name":"broadcast-control-center-preview",
-  "version":"0.2.0-alpha.3",
+  "version":"0.3.0-alpha.1",
   "private":true,
-  "description":"Supervised live OBS service control with independent permissions and manual fallback",
+  "description":"Supervised live OBS service and operator controls with independent permissions",
   "license":"MIT",
   "type":"module",
   "main":"dist/launcher.cjs",

@@ -4,7 +4,7 @@ import {readFile,stat,writeFile} from 'node:fs/promises';
 import path from 'node:path';
 import {blankWorkspace} from './model.ts';
 import type {Workspace} from './model.ts';
-import {validateWorkspace,importWorkspace,suggestBindings,text} from './workspace.ts';
+import {validateWorkspace,importWorkspace,text} from './workspace.ts';
 import {inspectObs} from './inspect.ts';
 import {inspectCompanion} from './companion.ts';
 import {loadWorkspace,saveWorkspace} from './storage.ts';
@@ -15,6 +15,7 @@ import {LiveFailure,LIVE_COMMANDS,normalizePermissions,safeLiveError} from './li
 import type {LiveCommand,LivePhase} from './live-contract.ts';
 import type {LiveSiteSnapshot} from './live-app.ts';
 import {applyServiceChange} from './live-schedule.ts';
+import {parseOperatorAction,describeOperatorAction} from './obs-operator.ts';
 protocol.registerSchemesAsPrivileged([{scheme:'bcc',privileges:{standard:true,secure:true,supportFetchAPI:true}}]);
 let window:BrowserWindow|null=null,workspace:Workspace=blankWorkspace(),busy=false,quitting=false,companionResult='Not inspected';
 const peer=new LiveObs();
@@ -50,9 +51,14 @@ app.whenReady().then(async()=>{
   try{workspace=await loadWorkspace(store());}catch{live.release('Saved workspace could not be read. It has not been overwritten; import a valid workspace.');}
   ipcMain.handle('live:site',event=>{sender(event);return state();});
   ipcMain.handle('live:snapshot',event=>{sender(event);return live.snapshot();});
-  // These never wait behind a running OBS request or a native confirmation dialog.
+  // Release/cancel never wait behind a device request or a native dialog.
   ipcMain.handle('live:release',event=>{sender(event);live.release();return live.snapshot();});
   ipcMain.handle('live:cancel-return',event=>{sender(event);live.cancelReturn();return live.snapshot();});
+  // Read-only panel polling never acquires the mutation/setup mutex or stops a timer.
+  ipcMain.handle('live:operator-data',async(event,query:unknown)=>{
+    sender(event);if(busy||live.busy)throw new Error('An action is in progress; operator status will refresh afterwards.');
+    try{return await live.operatorData(query);}catch(e){throw new Error(safeLiveError(e));}
+  });
   handle('live:connect',async(password:unknown)=>{
     editable();if(typeof password!=='string'||password.length>512)throw new LiveFailure('Invalid password input.');
     await live.connect(password);
@@ -63,19 +69,12 @@ app.whenReady().then(async()=>{
   handle('live:save',async(raw:unknown)=>{
     editable();let next:Workspace;try{next=validateWorkspace(raw);}catch{throw new LiveFailure('Workspace values are invalid. Check dates, names and local connection URLs.');}
     next.inventory=workspace.inventory;next.connections=workspace.connections;next.audioObservations=workspace.audioObservations;
-    // Schedule commands use the latest main-process state, not a stale mapping draft.
-    next.services=workspace.services;
-    // Live permissions do not use or persist the legacy offline confirmation flags.
-    next.bindings.confirmed=false;next.captions.confirmed=false;
+    next.services=workspace.services;next.bindings.confirmed=false;next.captions.confirmed=false;
     live.release('Configuration saved locally; enabling live control is a separate action.');
     if(next.obsUrl!==workspace.obsUrl)await live.disconnect();await save(next);await live.refresh();return state();
   });
   handle('live:services',async(change:unknown)=>{
-    // Local schedule editing is independent of OBS transmission and live permissions.
-    // The existing operation mutex serializes saves. A caption countdown is not a
-    // configuration edit and is deliberately neither cancelled nor restarted here.
-    const next=applyServiceChange(workspace,change,live.snapshot().selectedService);
-    await save(next);return state();
+    const next=applyServiceChange(workspace,change,live.snapshot().selectedService);await save(next);return state();
   });
   handle('live:import',async()=>{
     editable();const pick=await dialog.showOpenDialog(window!,{title:'Import local workspace or discovery report',properties:['openFile'],filters:[{name:'JSON',extensions:['json']}]});
@@ -91,7 +90,7 @@ app.whenReady().then(async()=>{
   });
   handle('live:enable',async(raw:unknown)=>{
     const permissions=normalizePermissions(raw),checked=await live.checkGrant(permissions),w=workspace;
-    const summary=`Collection: ${checked.collection}\nProfile: ${checked.profile}\nScenes/captions: ${permissions.scenes?'ENABLED':'off'}\nService audio: ${permissions.audio?w.bindings.audioInput:'off'}\nOBS start/stop: ${permissions.stream?'ENABLED':'off'}\n\nScene mappings: ${Object.entries(w.bindings.scenes).map(([r,n])=>r+' = '+(n||'unmapped')).join('; ')}\nBible: ${w.bindings.bibleText||'unmapped'}\nNext service: ${w.bindings.nextServiceText||'unmapped'}\nReviewed speaker-name pool: ${w.captions.speakerPool.join(', ')||'not configured'}\n\nEnabling does not change any output. Commands after this can affect the actual broadcast. YouTube destination/event status is not independently verified. Missing features remain individually unavailable. Manual OBS/Stream Deck control remains available.`;
+    const summary=`Collection: ${checked.collection}\nProfile: ${checked.profile}\nScenes/captions: ${permissions.scenes?'ENABLED':'off'}\nService audio: ${permissions.audio?w.bindings.audioInput:'off'}\nOBS start/stop: ${permissions.stream?'ENABLED':'off'}\nOBS operator desk: ${permissions.operator?'ENABLED — all scene/preview selections, input mute/level, source visibility/text, media and recording/replay/virtual-camera operations. Each operation requires a separate confirmation.':'off'}\n\nScene mappings: ${Object.entries(w.bindings.scenes).map(([r,n])=>r+' = '+(n||'unmapped')).join('; ')}\nBible: ${w.bindings.bibleText||'unmapped'}\nNext service: ${w.bindings.nextServiceText||'unmapped'}\nReviewed speaker-name pool: ${w.captions.speakerPool.join(', ')||'not configured'}\n\nEnabling does not change any output. Commands after this can affect the actual broadcast. YouTube destination/event status is not independently verified. Missing features remain individually unavailable. Manual OBS/Stream Deck control remains available.`;
     const pick=await dialog.showMessageBox(window!,{type:'warning',buttons:['Cancel','Enable selected live controls'],defaultId:0,cancelId:0,message:'Enable live control of this OBS session?',detail:summary});
     if(pick.response===1)await live.grant(permissions,checked.ticket);return live.snapshot();
   });
@@ -99,6 +98,14 @@ app.whenReady().then(async()=>{
   handle('live:phase',async(phase:unknown)=>{if(typeof phase!=='string')throw new LiveFailure('Choose a phase.');live.adoptPhase(phase as LivePhase);return live.snapshot();});
   handle('live:command',async(command:unknown,value:unknown)=>{
     if(typeof command!=='string'||!LIVE_COMMANDS.includes(command as LiveCommand)||(value!==undefined&&typeof value!=='string'))throw new LiveFailure('Invalid operator action.');
+    if(command==='operator'){
+      const action=parseOperatorAction(value),ticket=live.ticket(),s=live.snapshot(),reasons=s.reasons.operator;
+      if(reasons.length)throw new LiveFailure(reasons.join(' '));
+      if(action.collection!==s.observation.collection||action.profile!==s.observation.profile)throw new LiveFailure('OBS target changed. Refresh the operator panel.');
+      const pick=await dialog.showMessageBox(window!,{type:'warning',buttons:['Cancel','Apply OBS operator action'],defaultId:0,cancelId:0,message:'Apply this OBS operator action?',detail:`Collection: ${action.collection}\nProfile: ${action.profile}\n\n${describeOperatorAction(action)}\n\nThis is a real OBS action. It cancels any pending automatic caption return after confirmation. It does not change stream keys or YouTube events. Keep manual OBS control available.`});
+      if(pick.response!==1)return live.snapshot();if(ticket!==live.ticket())throw new LiveFailure('OBS or pending automation changed during confirmation. Refresh and review again.');
+      await live.command('operator',JSON.stringify(action));return live.snapshot();
+    }
     if(['start','stop','outro'].includes(command)){
       const ticket=live.ticket(),s=live.snapshot(),reason=s.reasons[command as LiveCommand];if(reason.length)throw new LiveFailure(reason.join(' '));
       const message=command==='start'?'Start the configured OBS stream?':command==='stop'?'Stop OBS transmission now?':'Mute service audio and show Outro?';

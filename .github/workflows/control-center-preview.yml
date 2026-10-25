@@ -47,6 +47,8 @@ jobs:
         run: ./node_modules/.bin/electron scripts/run-smoke.cjs smoke-readiness.cjs
       - name: Smoke-test Live Service join, permissions, caption timer and stream lifecycle
         run: ./node_modules/.bin/electron scripts/run-smoke.cjs smoke-live.cjs
+      - name: Smoke-test expanded OBS operator desk with live stream preserved
+        run: ./node_modules/.bin/electron scripts/run-smoke.cjs smoke-operator.cjs
       - name: Build universal Mac app
         run: npm run dist:mac
       - name: Record build identity and package checksums
