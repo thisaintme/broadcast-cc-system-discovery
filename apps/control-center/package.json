@@ -1,6 +1,6 @@
 {
   "name":"broadcast-control-center-preview",
-  "version":"0.3.0-alpha.1",
+  "version":"0.3.0-alpha.2",
   "private":true,
   "description":"Supervised live OBS service and operator controls with independent permissions",
   "license":"MIT",
