@@ -33,7 +33,7 @@ async function finish(code,error){if(finished)return;finished=true;clearTimeout(
         assert.equal(grants,1);assert.equal(await evaluate("window.liveService.snapshot().then(s=>s.permissions.scenes)"),false);assert.equal(peer.state.writes.length,0);
         allowGrant=true;await click('enable-live');await wait("window.liveService.snapshot().then(s=>s.permissions.scenes)");assert.equal(peer.state.writes.length,0);
         assert.equal(await evaluate("document.getElementById('live-start').disabled"),true);
-        await field('live-speaker-select','Speaker B',true);await click('live-speaker');await wait("window.liveService.snapshot().then(s=>s.observation.program==='Speaker' && !s.busy)");
+        await click('open-speaker-panel');await field('live-speaker-select','Speaker B',true);await click('live-speaker');await wait("window.liveService.snapshot().then(s=>s.observation.program==='Speaker' && !s.busy)");
         peer.state.mutes.Microphone=true;peer.emit('InputMuteStateChanged',{inputName:'Microphone',inputMuted:true});
 
         // Regression: the schedule remains editable with live control and a pending return.
@@ -69,17 +69,17 @@ async function finish(code,error){if(finished)return;finished=true;clearTimeout(
         const during=await evaluate('window.liveService.snapshot()');assert.equal(during.returnAt,beforeSchedule.live.returnAt);assert.equal(during.selectedService,'one');
         const persisted=JSON.parse(fs.readFileSync(path.join(dir,'workspace.json'),'utf8'));
         assert.deepEqual(persisted.services,firstSchedule.workspace.services);
-        await click('nav-live');assert.match(await evaluate("document.getElementById('next-live-service').textContent"),/27 Oct 2026/);
+        await click('nav-live');assert.match(await evaluate("document.getElementById('next-live-service').textContent"),/27\.10\.2026/);
         await wait("window.liveService.snapshot().then(s=>s.observation.program==='Main' && !s.busy)",15000);assert.equal(peer.state.mutes.Microphone,true);
         assert.deepEqual(peer.state.writes.slice(scheduleWrites).map(x=>x.name),['SetCurrentProgramScene']);
         assert.equal(await evaluate("window.liveService.snapshot().then(s=>s.permissions.scenes)"),true);
 
-        await click('live-bible');await wait("window.liveService.snapshot().then(s=>s.observation.program==='Bible' && !s.busy)");
+        await click('open-bible-panel');await click('live-bible');await wait("window.liveService.snapshot().then(s=>s.observation.program==='Bible' && !s.busy)");
         peer.state.program='Outro';peer.emit('CurrentProgramSceneChanged',{sceneName:'Outro'});await wait("window.liveService.snapshot().then(s=>s.returnAt===null)");
         await click('release-live');await wait("window.liveService.snapshot().then(s=>!s.permissions.scenes)");assert.equal(peer.state.streaming,true);
         await click('permission-scenes');await click('permission-audio');await click('permission-stream');await click('enable-live');await wait("window.liveService.snapshot().then(s=>s.permissions.stream && s.permissions.audio)");
         await click('live-on-air');await wait("window.liveService.snapshot().then(s=>s.observation.program==='Main' && s.observation.muted===false && !s.busy)");
-        const shape=await evaluate("({overflow:document.documentElement.scrollWidth>innerWidth+2,mode:document.getElementById('live-mode').textContent,status:document.getElementById('transmission-status').textContent})");assert.equal(shape.overflow,false);assert.match(shape.mode,/LIVE CONTROL/);assert.match(shape.status,/TRANSMITTING/);
+        const shape=await evaluate("({overflow:document.documentElement.scrollWidth>innerWidth+2,mode:document.getElementById('live-mode').dataset.authorized,status:document.getElementById('transmission-status').dataset.state})");assert.equal(shape.overflow,false);assert.equal(shape.mode,'true');assert.equal(shape.status,'TRANSMITTING');
         fs.mkdirSync('release',{recursive:true});fs.writeFileSync('release/smoke-live.png',(await win.webContents.capturePage()).toPNG());
         const count=peer.state.writes.length;await click('live-stop');assert.equal(stops,1);assert.equal(peer.state.writes.length,count);assert.equal(peer.state.streaming,true);
         allowStop=true;await click('live-stop');await wait("window.liveService.snapshot().then(s=>s.observation.streaming===false && !s.busy)");assert.equal(peer.state.streaming,false);
