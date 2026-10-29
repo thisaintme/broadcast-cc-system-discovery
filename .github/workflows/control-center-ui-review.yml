@@ -1,0 +1,61 @@
+name: Control Center UI review
+on:
+  push:
+    branches: [feat/claude-design-ui]
+    paths: ['apps/control-center/**', '.github/workflows/control-center-ui-review.yml']
+  pull_request:
+    branches: [control-center-m1]
+    paths: ['apps/control-center/**', '.github/workflows/control-center-ui-review.yml']
+permissions:
+  contents: read
+concurrency:
+  group: control-center-ui-review-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  validate:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    env:
+      ELECTRON_SKIP_BINARY_DOWNLOAD: '1'
+    steps:
+      - uses: actions/checkout@v4
+      - name: Archive exact reviewed source
+        run: |
+          mkdir -p /tmp/bcc-review
+          git archive --format=tar.gz --output=/tmp/bcc-review/source.tar.gz HEAD
+      - uses: actions/upload-artifact@v4
+        with:
+          name: control-center-review-source
+          path: /tmp/bcc-review/source.tar.gz
+          retention-days: 7
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - name: Install pinned dependencies
+        working-directory: apps/control-center
+        run: npm install --no-audit --no-fund
+      - name: Archive renderer tooling for offline UI review
+        working-directory: apps/control-center
+        run: |
+          tar -czf /tmp/bcc-review/renderer-tools.tar.gz node_modules/react node_modules/react-dom node_modules/scheduler node_modules/esbuild node_modules/@esbuild node_modules/@types node_modules/csstype node_modules/obs-websocket-js node_modules/ws node_modules/electron/electron.d.ts node_modules/electron/package.json
+      - uses: actions/upload-artifact@v4
+        with:
+          name: control-center-renderer-review-tools
+          path: /tmp/bcc-review/renderer-tools.tar.gz
+          retention-days: 1
+      - name: Typecheck
+        working-directory: apps/control-center
+        run: npm run typecheck
+      - name: Safety and domain regression tests
+        working-directory: apps/control-center
+        run: npm test
+      - name: Build application
+        working-directory: apps/control-center
+        run: npm run build
+      - uses: actions/upload-artifact@v4
+        with:
+          name: control-center-ui-review-build
+          path: |
+            apps/control-center/dist/renderer
+            apps/control-center/package-lock.json
+          retention-days: 7
