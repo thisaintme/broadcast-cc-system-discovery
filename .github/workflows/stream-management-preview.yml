@@ -2,100 +2,73 @@ name: Stream Management — tested Mac preview only
 on:
   push:
     branches: ['preview/stream-management-dmg']
-    paths: ['broadcast-cc-stream-management-implementation.zip', '.github/workflows/stream-management-preview.yml', 'apps/control-center/**', 'preview/**']
+    paths: ['apps/control-center/**', '.github/workflows/stream-management-preview.yml']
   workflow_dispatch:
 permissions: {contents: read}
 concurrency:
   group: bcc-stream-management-preview
   cancel-in-progress: true
 jobs:
-  source:
-    runs-on: ubuntu-latest
-    outputs:
-      ready: ${{ steps.check.outputs.ready }}
-    steps:
-      - uses: actions/checkout@v4
-        with: {persist-credentials: false}
-      - name: Verify the reviewed Stream Management input
-        id: check
-        shell: bash
-        run: |
-          set -euo pipefail
-          archive=broadcast-cc-stream-management-implementation.zip
-          if [[ ! -f "$archive" ]]; then
-            echo 'ready=false' >> "$GITHUB_OUTPUT"
-            echo 'No preview DMG: the reviewed source ZIP is missing from the root of the preview branch.' >> "$GITHUB_STEP_SUMMARY"
-            exit 0
-          fi
-          echo "31738ae2871c0266eebb6c5574488556eee7490522a5365875c514734f25efe1  $archive" | sha256sum -c -
-          echo 'ready=true' >> "$GITHUB_OUTPUT"
   mac:
-    needs: source
-    if: needs.source.outputs.ready == 'true'
+    if: github.ref == 'refs/heads/preview/stream-management-dmg'
     runs-on: macos-15-intel
     timeout-minutes: 35
+    defaults:
+      run:
+        working-directory: apps/control-center
+        shell: bash
     env:
       CSC_IDENTITY_AUTO_DISCOVERY: 'false'
-      ARCHIVE: broadcast-cc-stream-management-implementation.zip
     steps:
       - uses: actions/checkout@v4
         with: {persist-credentials: false}
       - uses: actions/setup-node@v4
         with: {node-version: '24'}
-      - name: Apply and verify exact preview source and clipboard correction
-        shell: bash
+      - name: Install application dependencies
+        run: npm install --no-fund --no-audit
+      - name: Typecheck and build the checked-in Electron app
+        run: npm run typecheck && npm run build
+      - name: Full application regression suite
         run: |
           set -euo pipefail
-          unzip -q "$ARCHIVE" -d "$RUNNER_TEMP/input"
-          patch="$RUNNER_TEMP/input/stream-management-patch"
-          node --test "$patch/validation/apply-package.test.mjs"
-          node "$patch/apply-stream-management.mjs" "$GITHUB_WORKSPACE" --apply
-          git apply --check preview/stream-management-electron44.patch
-          git apply preview/stream-management-electron44.patch
-          test "$(git hash-object apps/control-center/src/stream-management-main.ts)" = 4bb6256e503006a1aeff9754e2651b7f7a915102
-          test -s apps/control-center/tests/stream-management.test.mjs
-      - name: Install application dependencies
-        working-directory: apps/control-center
-        run: npm install --no-fund --no-audit
-      - name: Typecheck, run full regression suite and build
-        working-directory: apps/control-center
-        run: npm run typecheck && npm test && npm run build
-      - name: Eight existing macOS Electron smoke tests
-        working-directory: apps/control-center
-        shell: bash
+          node --experimental-transform-types --test --test-reporter=tap tests/*.test.mjs | tee "$RUNNER_TEMP/regression.tap"
+      - name: Eight native Electron regression scenarios
         run: |
           set -euo pipefail
           for suite in smoke smoke-obs smoke-offline smoke-audio smoke-service-audio smoke-readiness smoke-live smoke-operator; do
             ./node_modules/.bin/electron scripts/run-smoke.cjs "$suite.cjs"
           done
-      - name: Stream Management menu, renderer, recurrence and independent account slots
-        working-directory: apps/control-center
-        run: ./node_modules/.bin/electron scripts/smoke-stream-management.cjs
-      - name: Package a universal preview; never publish
-        working-directory: apps/control-center
-        run: |
-          npm pkg set 'version=0.3.0-alpha.3'
-          npm run dist:mac
-      - name: Mount and verify installer, both CPU architectures and packaged Stream Management files
-        working-directory: apps/control-center
-        shell: bash
+      - name: Stream Management menu, account slots and eight Sundays across DST
         run: |
           set -euo pipefail
-          dmg=(release/*.dmg); test "${#dmg[@]}" -eq 1 && test -s "${dmg[0]}"
+          ./node_modules/.bin/electron scripts/smoke-stream-management.cjs
+          cp release/smoke-stream-management.png "$RUNNER_TEMP/smoke-stream-management.png"
+          cp -R dist "$RUNNER_TEMP/tested-dist"
+      - name: Build universal preview DMG (never publish)
+        run: npm run dist:mac
+      - name: Mount the installer, verify both architectures, compare tested code and launch the packaged app
+        run: |
+          set -euo pipefail
+          dmg=(release/*.dmg); test "${#dmg[@]}" -eq 1; test -s "${dmg[0]}"
           hdiutil verify "${dmg[0]}"
-          mount="$RUNNER_TEMP/dmg-review"; mkdir "$mount"
+          mount="$RUNNER_TEMP/bcc-preview-volume"; mkdir "$mount"
           hdiutil attach -readonly -nobrowse -mountpoint "$mount" "${dmg[0]}"
           trap 'hdiutil detach "$mount"' EXIT
-          apps=("$mount"/*.app); test "${#apps[@]}" -eq 1
-          plist="${apps[0]}/Contents/Info.plist"
+          app=("$mount"/*.app); test "${#app[@]}" -eq 1
+          plist="${app[0]}/Contents/Info.plist"
           exe=$(/usr/libexec/PlistBuddy -c 'Print CFBundleExecutable' "$plist")
-          lipo -verify_arch x86_64 arm64 "${apps[0]}/Contents/MacOS/$exe"
-          ./node_modules/.bin/asar extract "${apps[0]}/Contents/Resources/app.asar" "$RUNNER_TEMP/packed"
-          test "$(node -p 'require(process.argv[1]).version' "$RUNNER_TEMP/packed/package.json")" = 0.3.0-alpha.3
-          for f in live-main.cjs stream-management-preload.cjs renderer/stream-management.html renderer/stream-management-renderer.js; do cmp "dist/$f" "$RUNNER_TEMP/packed/dist/$f"; done
+          binary="${app[0]}/Contents/MacOS/$exe"
+          lipo -verify_arch x86_64 arm64 "$binary"
+          ./node_modules/.bin/asar extract "${app[0]}/Contents/Resources/app.asar" "$RUNNER_TEMP/packed"
+          test "$(node -p 'require(process.argv[1]).version' "$RUNNER_TEMP/packed/package.json")" = '0.3.0-alpha.3'
+          diff -qr "$RUNNER_TEMP/tested-dist" "$RUNNER_TEMP/packed/dist"
+          node scripts/check-mounted-preview.cjs "$binary"
+          cp "$RUNNER_TEMP/smoke-stream-management.png" release/
           (cd release && shasum -a 256 *.dmg > SHA256SUMS.txt)
-          printf 'commit=%s\nsource_zip_sha256=%s\n' "$GITHUB_SHA" "$(shasum -a 256 "../../$ARCHIVE" | cut -d ' ' -f 1)" > release/BUILD.txt
-      - name: Upload tested preview disk image
+          printf 'commit=%s\narchitectures=x86_64 arm64\n' "$GITHUB_SHA" > release/BUILD.txt
+          grep -E '^# (tests|pass|fail|skipped) ' "$RUNNER_TEMP/regression.tap" >> release/BUILD.txt
+          cat release/BUILD.txt release/SHA256SUMS.txt >> "$GITHUB_STEP_SUMMARY"
+      - name: Upload verified disk image
         uses: actions/upload-artifact@v4
         with:
           name: Stream-Management-Preview-macOS-universal
@@ -105,4 +78,5 @@ jobs:
             apps/control-center/release/BUILD.txt
             apps/control-center/release/smoke-stream-management.png
           if-no-files-found: error
+          compression-level: 0
           retention-days: 14
