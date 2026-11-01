@@ -1,0 +1,19 @@
+name: Import verified wiring into preview source
+on:
+  push:
+    branches: ['preview/stream-management-dmg']
+    paths: ['.github/workflows/preview-import-wiring.yml']
+permissions: {contents: write}
+jobs:
+  import:
+    if: github.ref == 'refs/heads/preview/stream-management-dmg'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check four reviewed blob hashes and commit only those files
+        run: |
+          set -euo pipefail
+          python3 preview/wire-stream-management.py
+          git add -- apps/control-center/scripts/build.mjs apps/control-center/src/live-main.ts apps/control-center/src/youtube-main.ts apps/control-center/src/youtube-model.ts
+          git -c user.name='github-actions[bot]' -c user.email='41898282+github-actions[bot]@users.noreply.github.com' commit -m 'feat(preview): wire stream management into the Electron app and build'
+          git push origin HEAD:refs/heads/preview/stream-management-dmg
