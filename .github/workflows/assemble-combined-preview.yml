@@ -1,4 +1,4 @@
-name: Assemble reviewed desk and YouTube source
+name: Assemble combined preview source
 on:
   push:
     branches: ['integration/redesign-and-youtube-a4']
@@ -10,55 +10,23 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with: {fetch-depth: 0}
-      - name: Combine exact source revisions; touch only the integration branch
-        shell: bash
+      - name: Apply pinned integration, stage source and validation manifest
         run: |
           set -euo pipefail
-          ui=9738b3c2c0f33c575fb1160584d73aaac3fd550b
-          base=9eb5569a7f4a6c36251b2b167ae1dad6c046d6db
-          git merge-base --is-ancestor "$base" HEAD
-          test "$(git merge-base "$ui" "$base")" = 6f206ba4fad8ac3908f09fad20dfbe51713bd454
-          root=apps/control-center
-          git checkout "$ui" -- .github/workflows/control-center-preview.yml .github/workflows/control-center-ui-review.yml "$root/docs/CLAUDE-DESIGN-UI.md" "$root/scripts/run-smoke.cjs" "$root/scripts/smoke-design.cjs" "$root/scripts/smoke-live.cjs" "$root/scripts/smoke-operator.cjs" "$root/src/live-design.tsx" "$root/src/live-renderer.tsx" "$root/src/live-ui-model.ts" "$root/src/live.css" "$root/src/live.html" "$root/tests/live-ui-model.test.mjs"
-          python3 - <<'PY'
-          from pathlib import Path
-          app=Path('apps/control-center'); src=app/'src'
-          def sub(p,old,new):
-              text=p.read_text(); assert text.count(old)==1,(str(p),old); p.write_text(text.replace(old,new))
-          sub(app/'package.json','0.3.0-alpha.3','0.3.0-alpha.4')
-          sub(src/'live-app.ts','export interface LiveAppBridge extends LiveBridge{','export interface LiveAppBridge extends LiveBridge{\n  openStreamManagement():Promise<void>;')
-          sub(src/'live-preload.ts','const api:LiveAppBridge={','const api:LiveAppBridge={\n  openStreamManagement:()=>ipcRenderer.invoke(\'live:open-stream-management\'),')
-          sub(src/'live-main.ts',"  ipcMain.handle('live:site',", "  // Fixed, read-only navigation from the trusted desk; no encoder or account action.\n  ipcMain.handle('live:open-stream-management',async event=>{\n    sender(event);\n    if(!youtube)throw new Error('YouTube-Planung ist noch nicht bereit.');\n    try{await youtube.open();}catch{throw new Error('YouTube-Planung konnte nicht geöffnet werden. Versuchen Sie es nach der laufenden Aktion erneut.');}\n  });\n  ipcMain.handle('live:site',")
-          ui=src/'live-design.tsx'; desk=src/'live-renderer.tsx'
-          sub(ui,"['schedule', 'Termine', 'calendar'],", "['schedule', 'Termine', 'calendar'], ['youtube', 'YouTube', 'broadcast'],")
-          sub(desk,"function navigate(id:string){setPanel('');", "function navigate(id:string){if(id==='youtube'){void act(()=>api.openStreamManagement());return;}setPanel('');")
-          sub(ui,'export function ChannelReadout({s, fresh, status}: {','export function ChannelReadout({s, fresh, status, openPlanning}: {openPlanning: () => void; ')
-          sub(ui,'Die App bestätigt derzeit nur OBS. Prüfen Sie Bild, Ton und den richtigen Termin in Ihrer YouTube-Kontrolle.</p>', 'Diese Anzeige zeigt den Encoderstatus. Verwalten Sie YouTube-Termine, Serien und die verbundenen Kanäle in der Stream-Planung.</p><button id="desk-youtube-planning" type="button" className="bcc-text-action" onClick={openPlanning}>YouTube-Planung öffnen <Icon name="arrow"/></button>')
-          for p in [ui,desk]: sub(p,'<ChannelReadout s={s} fresh={fresh} status={status}/>','<ChannelReadout s={s} fresh={fresh} status={status} openPlanning={()=>navigate(\'youtube\')}/>')
-          sub(ui,'Russisch, Mitteilungen und Kamerafahrten sind in diesem Stand nicht angebunden.','Russische YouTube-Termine lassen sich mitplanen. Der Web Presenter wird manuell gestartet; Mitteilungen und Kamerafahrten werden nicht automatisch ausgelöst.')
-          sub(desk,"{tab==='schedule'&&<>\n", "{tab==='schedule'&&<>\n        <article><h2>Auf YouTube planen</h2><p>Einzelne Übertragungen und Serien erstellen, verschieben oder löschen – ohne OBS zu starten.</p><button type=\"button\" className=\"primary\" onClick={()=>navigate('youtube')}>YouTube-Planung öffnen</button></article>\n")
-          sub(desk,'<article><h2>Termin hinzufügen</h2>','<article><h2>Lokalen Termin hinzufügen</h2>')
-          sub(desk,'>Termin mit Datum im Titel speichern</button>','>Nur im lokalen Kalender speichern</button>')
-          sub(desk,'<div className="live-setup">','<div className="live-setup"><article><h2>YouTube-Konten</h2><p>Kanäle verbinden und Stream-Schlüssel unter „Accounts“ verwalten.</p><button type="button" onClick={()=>navigate(\'youtube\')}>YouTube-Verwaltung öffnen</button></article>')
-          sub(src/'live.css','grid-template-columns:repeat(4,minmax(0,1fr));gap:3px','grid-template-columns:repeat(5,minmax(0,1fr));gap:3px')
-          # Both windows use the same design tokens; keep tool-specific form layouts separate.
-          css=src/'live.css'; text=css.read_text(); a=text.index('/* Broadcast CC — colour tokens.'); b=text.index('/* UI adaptation of the supplied Claude Design export.'); (src/'desk-tokens.css').write_text(text[a:b]);css.write_text(text[:a]+text[b:])
-          for filename,anchor in [('live.html','<link rel="stylesheet" href="live.css">'),('stream-management.html','<link rel="stylesheet" href="stream-management.css">')]:sub(src/filename,anchor,'<link rel="stylesheet" href="desk-tokens.css">'+anchor)
-          sub(src/'live-main.ts',"'/stream-management.css':'text/css',", "'/stream-management.css':'text/css','/desk-tokens.css':'text/css',")
-          sub(app/'scripts/build.mjs',"'stream-management.css','audio.css'", "'stream-management.css','desk-tokens.css','audio.css'")
-          css=src/'stream-management.css';text=css.read_text(); text=':root{--bg:var(--surface-app);--panel:var(--surface-card);--line:var(--border-default);--text:var(--text-primary);--muted:var(--text-secondary);--accent:var(--action-primary-bg);--danger:var(--status-error-fg);font-family:var(--font-sans);font-size:15px}'+text.split('}',1)[1]
-          for k,v in {'#111a23':'var(--surface-input)','#102720':'var(--text-on-accent)','#915348':'var(--status-error-border)','#a98151':'var(--status-warning-border)','#382628':'var(--status-error-bg)','#1d2d36':'var(--surface-raised)'}.items():text=text.replace(k,v)
-          css.write_text(text+'\nbutton:focus-visible,input:focus-visible,textarea:focus-visible,select:focus-visible{outline-color:var(--focus-ring)}\n')
-          manager=src/'stream-management-renderer.tsx'; sub(manager,'const bridge = window.streamManagement;', '''// Same origin as the desk; share only the appearance preference, never account data.
-          const syncTheme=()=>{let theme='dark';try{if(localStorage.getItem('bcc-ui-theme')==='light')theme='light';}catch{}document.documentElement.dataset.theme=theme;};
-          syncTheme();window.addEventListener('storage',e=>{if(e.key==='bcc-ui-theme'||e.key===null)syncTheme();});
-          const bridge = window.streamManagement;''')
-          wf=Path('.github/workflows/stream-management-preview.yml'); sub(wf,'name: Stream Management — tested Mac preview only','name: Operator desk + YouTube — tested Mac preview');sub(wf,'0.3.0-alpha.3','0.3.0-alpha.4');sub(wf,'Eight native Electron regression scenarios','Nine native Electron scenarios including the redesigned desk');sub(wf,'smoke-readiness smoke-live smoke-operator;','smoke-readiness smoke-live smoke-operator smoke-design;');sub(wf,'cp -R dist "$RUNNER_TEMP/tested-dist"','cp release/smoke-design-{dark,light}.png "$RUNNER_TEMP/"\n          cp -R dist "$RUNNER_TEMP/tested-dist"'); sub(wf,'cp "$RUNNER_TEMP/smoke-stream-management.png" release/','cp "$RUNNER_TEMP/smoke-stream-management.png" "$RUNNER_TEMP"/smoke-design-{dark,light}.png release/');sub(wf,'name: Stream-Management-Preview-macOS-universal','name: Broadcast-CC-Redesign-YouTube-macOS-universal');sub(wf,'            apps/control-center/release/smoke-stream-management.png','            apps/control-center/release/smoke-stream-management.png\n            apps/control-center/release/smoke-design-*.png');sub(wf,'Mount the installer, verify both architectures, compare tested code and launch the packaged app','Mount the DMG and exercise the redesigned desk → YouTube → eight paired Sundays')
-          doc=app/'docs/CLAUDE-DESIGN-UI.md';doc.write_text('> **Combined preview 0.3.0-alpha.4:** This document describes the original alpha.2 adaptation. The shipping preview now includes YouTube Stream Management. Open **YouTube** in the operator desk or **YouTube-Planung öffnen** on its YouTube card. See `STREAM-MANAGEMENT.md` for remote event and credential handling.\n\n'+doc.read_text())
-          PY
-          git rm .github/workflows/assemble-combined-preview.yml
-          git add apps/control-center .github/workflows/stream-management-preview.yml
-          git config user.name 'github-actions[bot]'; git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git show f56306a621a674abfeb33f83e7a37ce278e6712e:.github/workflows/assemble-combined-preview.yml | sed -n '/^          set -euo pipefail$/,/^          PY$/p' | sed 's/^          //' > "$RUNNER_TEMP/assemble.sh"
+          bash "$RUNNER_TEMP/assemble.sh"
+          python3 -c "from pathlib import Path;p=Path('apps/control-center/src/desk-tokens.css');p.write_text(p.read_text().rstrip()+'\n')"
+          cp .github/workflows/stream-management-preview.yml preview/combined-a4-workflow.txt
+          git restore --source=HEAD --staged --worktree .github/workflows
+          git add apps/control-center preview/combined-a4-workflow.txt
           git diff --cached --check
-          git commit -m 'Integrate the reviewed German operator desk with direct YouTube planning and mounted-image acceptance'
+          git config user.name 'github-actions[bot]'; git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git commit -m 'Combine reviewed operator desk, explicit scheduling navigation and YouTube tooling'
           git push origin HEAD:refs/heads/integration/redesign-and-youtube-a4
+          git ls-tree HEAD apps; git ls-tree HEAD preview/combined-a4-workflow.txt
+          tar -czf "$RUNNER_TEMP/combined.tgz" apps/control-center
+      - uses: actions/upload-artifact@v4
+        with:
+          name: combined-preview-source-for-validation
+          path: ${{ runner.temp }}/combined.tgz
+          retention-days: 1
