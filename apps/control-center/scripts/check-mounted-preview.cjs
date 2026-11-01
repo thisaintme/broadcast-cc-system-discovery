@@ -28,6 +28,7 @@ async function main(){
     const tab=async label=>{await until(()=>m(`!![...document.querySelectorAll('nav button')].find(b=>b.textContent===${JSON.stringify(label)})`),'tab '+label);await m(`[...document.querySelectorAll('nav button')].find(b=>b.textContent===${JSON.stringify(label)}).click()`);await until(()=>m(`document.querySelector('nav button[aria-current=page]')?.textContent===${JSON.stringify(label)}`),label);};
     await tab('Accounts');assert.match(await m('document.body.innerText'),/German · OBS/);assert.match(await m('document.body.innerText'),/Russian · Web Presenter/);
     const accounts=await m(`window.streamManagement.panel().then(p=>({ready:p.ready,langs:p.accounts.map(a=>a.language).sort(),count:p.state.occurrences.length}))`);assert.deepEqual(accounts,{ready:true,langs:['de','ru'],count:0});
+    assert.equal(await m(`document.querySelectorAll('form[id^=key-form-] input[type=password]:not(:disabled)').length`),2);assert.ok(await m(`!!document.querySelector('#desktop-client-setup input[name=clientId]')`));
     await tab('Create');
     const toggle=label=>m(`[...document.querySelectorAll('form label')].find(l=>l.textContent.trim()===${JSON.stringify(label)}).querySelector('input').click()`);
     await toggle('Repeat as a series');await toggle('Include Russian channel');

@@ -8,6 +8,8 @@ import { YouTubeFailure } from './youtube-model.ts';
 import { StreamManagementApi } from './stream-management-api.ts';
 import { StreamManagementFile } from './stream-management-store.ts';
 import { StreamManagementService } from './stream-management-service.ts';
+import { AccountSetup } from './stream-account-setup.ts';
+import { object } from './stream-management-model.ts';
 import { StreamAccounts } from './stream-accounts.ts';
 import { ManagementError, PersistenceError, eventTitle, id, language, message, only, parseDestinations, scope, watchUrl } from './stream-management-model.ts';
 import type { Language, Occurrence, Profile, RemoteBroadcast } from './stream-management-model.ts';
@@ -32,6 +34,7 @@ export class StreamManagementWindow {
     private notice = 'Scheduling does not start OBS or Web Presenter. All times use Europe/Berlin.';
     private remote: Partial<Record<Language, RemoteBroadcast[]>> = {};
     private accounts: StreamAccounts;
+    private setup: AccountSetup;
     private service: StreamManagementService;
     constructor(private d: Dependencies) {
         const secret = (name: string) => new YouTubeSecretFile(path.join(d.directory, name), {
@@ -42,6 +45,7 @@ export class StreamManagementWindow {
             de: { oauth: d.germanOAuth, profileStore: secret('stream-profile-de.enc') },
             ru: { oauth: new YouTubeOAuth(secret('google-credentials-ru.enc'), url => shell.openExternal(url)), profileStore: secret('stream-profile-ru.enc') },
         }, token => new StreamManagementApi(token), d.encoderBusy);
+        this.setup = new AccountSetup(this.accounts, {de:secret('pending-stream-key-de.enc'),ru:secret('pending-stream-key-ru.enc')});
         this.service = new StreamManagementService(new StreamManagementFile(path.join(d.directory, 'stream-management.json')), this.accounts, () => this.emit());
         const sender = (event: IpcMainInvokeEvent) => {
             if (!this.window || event.sender !== this.window.webContents || event.senderFrame !== this.window.webContents.mainFrame || event.senderFrame?.url !== 'bcc://app/stream-management.html')
@@ -79,11 +83,10 @@ export class StreamManagementWindow {
         });
     }
     get busy(): boolean { return this.working; }
-    panel(): ManagementPanel { return { state: this.service.snapshot(), accounts: this.accounts.views(), busy: this.working, ready: this.ready, error: this.error, notice: this.notice, remote: structuredClone(this.remote) }; }
+    panel(): ManagementPanel { return { state: this.service.snapshot(), accounts: this.accounts.views().map(a=>({...a,keyPending:this.setup.hasPending(a.language)})), busy: this.working, ready: this.ready, error: this.error, notice: this.notice, remote: structuredClone(this.remote) }; }
     emit(): void { if (this.window && !this.window.isDestroyed())
         this.window.webContents.send('stream-management:state', this.panel()); }
-    cancel(): void { this.generation++; this.service.cancel(); if (this.working)
-        this.accounts.cancel(); this.notice = 'Pending follow-up cancelled. Completed remote changes remain. No encoder was stopped.'; this.emit(); }
+    cancel(): void { this.generation++; this.service.cancel(); if (this.working) {this.accounts.cancel(); this.notice = 'Pending follow-up cancelled. Completed remote changes remain. No encoder was stopped.';} this.emit(); }
     close(): void { this.cancel(); this.window?.close(); }
     async open(): Promise<void> {
         if (this.window && !this.window.isDestroyed()) {
@@ -106,6 +109,7 @@ export class StreamManagementWindow {
         if (!this.ready)
             try {
                 await this.accounts.load();
+                await this.setup.load();
                 await this.service.load();
                 this.ready = true;
                 this.error = '';
@@ -136,6 +140,40 @@ export class StreamManagementWindow {
         return id(broadcastId);
     }
     private async action(raw: unknown): Promise<Profile[] | undefined> {
+        // Keep secret-bearing inputs out of all generic review and error formatting.
+        const kind = object(raw).kind, epoch = this.generation;
+        const guard = () => { if (epoch !== this.generation || !this.window || this.window.isDestroyed()) throw new ManagementError('cancelled','Setup cancelled.'); };
+        if (kind === 'stage-key' || kind === 'verify-key' || kind === 'discard-key') {
+            const body = only(raw, kind === 'stage-key' ? ['kind','language','key'] : ['kind','language']);
+            const lang = language(body.language), label = lang === 'de' ? 'German · OBS' : 'Russian · Web Presenter';
+            if (kind === 'stage-key') {
+                if (await this.confirm('Save this key on this Mac?', label+' · Only the encrypted, unverified key is saved or replaced. No active profile or encoder is changed.', 'Save local key')) {
+                    await this.setup.stage(lang,body.key,guard); this.notice=label+' · Key saved on this Mac. Verify it after connecting YouTube.';
+                }
+            } else if (kind === 'verify-key') {
+                if (await this.confirm('Verify and use this key?', label+' · Only an exact match on this channel can replace its verified profile. No encoder setting changes.', 'Verify and use')) {
+                    await this.setup.verify(lang,guard); this.notice=label+' · Key verified against the channel and saved as its streaming profile.';
+                }
+            } else if (await this.confirm('Forget this unverified key?',label+' · Your verified profile, YouTube and the encoder stay unchanged.','Forget local key')) {
+                await this.setup.discard(lang);this.notice=label+' · Unverified key removed.';
+            }
+            return;
+        }
+        if(kind === 'setup-client' || kind === 'setup-client-file') {
+            const body=only(raw,kind==='setup-client'?['kind','clientId','clientSecret']:['kind']);
+            let config:unknown;
+            if(kind==='setup-client-file') {
+                const pick=await dialog.showOpenDialog(this.window!,{title:'Choose Google Desktop app credentials from this Mac',properties:['openFile'],filters:[{name:'Google Desktop app JSON',extensions:['json']}]});
+                if(pick.canceled)return;guard();
+                if((await stat(pick.filePaths[0])).size>65536)throw new ManagementError('file','Choose a Desktop client JSON under 64 KiB.');
+                try{config=JSON.parse(await readFile(pick.filePaths[0],'utf8'));}catch{throw new ManagementError('file','This is not a readable Desktop client JSON.');}
+            }else {config={installed:{client_id:body.clientId,client_secret:body.clientSecret}};}
+            guard();
+            if(await this.confirm('Save Google sign-in setup?', 'The Desktop client will be saved in encrypted storage for unconnected destinations on this Mac. Linked channels are not changed. This is not a Google account password.', 'Save setup')) {
+                await this.setup.configureSignIn(config,guard); this.notice='Google sign-in setup saved. Choose Connect YouTube on the destination you want to link.';
+            }
+            return;
+        }
         const r = only(raw, ['kind', 'plan', 'draft', 'edit', 'occurrenceId', 'scope', 'language', 'broadcastId', 'profileId', 'madeForKids', 'template', 'germanOnly']);
         const lang = r.language !== undefined ? language(r.language) : undefined;
         const needLang = () => { if (!lang)
@@ -218,6 +256,7 @@ export class StreamManagementWindow {
         else if (r.kind === 'disconnect') {
             if (await this.confirm('Remove this account connection from this Mac?', `${needLang().toUpperCase()} • Local authorization and saved profile will be removed. Existing YouTube events and equipment settings stay unchanged. Google permission revocation is separate.`, 'Disconnect locally')) {
                 await this.accounts.disconnect(needLang());
+                await this.setup.discard(needLang());
                 delete this.remote[needLang()];
             }
         }

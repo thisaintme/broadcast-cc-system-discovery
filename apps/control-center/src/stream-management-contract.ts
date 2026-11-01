@@ -8,7 +8,7 @@ export interface ManagementPanel {
     notice: string;
     remote: Partial<Record<Language, RemoteBroadcast[]>>;
 }
-export type ManagementAction = {
+export type ManagementAction = {kind:'stage-key';language:Language;key:string} | {kind:'verify-key'|'discard-key';language:Language} | {kind:'setup-client';clientId:string;clientSecret:string} | {kind:'setup-client-file'} | {
     kind: 'create';
     plan: CreationPlan;
 } | {

@@ -35,6 +35,7 @@ export interface AccountView {
     channel: Channel | null;
     profile: Profile | null;
     keySaved: boolean;
+    keyPending?: boolean;
 }
 export interface RemoteBroadcast {
     id: string;

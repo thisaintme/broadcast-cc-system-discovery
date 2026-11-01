@@ -65,7 +65,7 @@ export class StreamAccounts implements AccountAccess {
             throw new ManagementError('account', 'Google returned a different channel. Reconnect before continuing.');
         return api;
     }
-    private async idle(lang: Language): Promise<void> {
+    async assertIdle(lang: Language): Promise<void> {
         if (this.encoderBusy(lang))
             throw new ManagementError('active', 'The encoder may be transmitting. Stop it before replacing or removing credentials.');
         if (!this.slots[lang].oauth.channel)
@@ -77,7 +77,7 @@ export class StreamAccounts implements AccountAccess {
         if (selected && (await api.profile(selected.id)).status === 'active')
             throw new ManagementError('active', 'The saved ingestion profile is receiving video. Stop the encoder before changing it.');
     }
-    async configure(lang: Language, raw: unknown): Promise<void> { language(lang); await this.idle(lang); await this.slots[lang].oauth.configure(raw); }
+    async configure(lang: Language, raw: unknown, guard = () => {}): Promise<void> { language(lang); await this.assertIdle(lang); guard(); if(this.encoderBusy(lang)) throw new ManagementError('active','Encoder state changed. No configuration was saved.'); await this.slots[lang].oauth.configure(raw); }
     async connect(lang: Language): Promise<void> {
         language(lang);
         const previous = this.slots[lang].oauth.channel;
@@ -100,7 +100,7 @@ export class StreamAccounts implements AccountAccess {
     }
     async disconnect(lang: Language): Promise<void> {
         language(lang);
-        await this.idle(lang);
+        await this.assertIdle(lang);
         await this.slots[lang].oauth.forget();
         await this.slots[lang].profileStore.clear();
         delete this.profiles[lang];
@@ -109,19 +109,22 @@ export class StreamAccounts implements AccountAccess {
         const api = await this.authorized(lang), channel = this.slots[lang].oauth.channel!;
         return (await api.profiles()).filter(p => p.channelId === channel.id && p.reusable).map(publicProfile);
     }
-    async selectProfile(lang: Language, profileId: string): Promise<void> {
+    async selectProfile(lang: Language, profileId: string, expectedKey?: string, guard = () => {}): Promise<void> {
         language(lang);
         id(profileId);
-        await this.idle(lang);
+        await this.assertIdle(lang);
         const api = await this.authorized(lang), p = await api.profile(profileId);
-        if (p.channelId !== this.slots[lang].oauth.channel?.id || !p.reusable)
+        guard();
+        if (this.encoderBusy(lang) || (expectedKey !== undefined && (!['created','ready','inactive'].includes(p.status) || expectedKey !== p.key)))
+            throw new ManagementError('profile', 'The key or encoder state changed. The saved profile was not replaced.');
+        if (p.id !== profileId || p.channelId !== this.slots[lang].oauth.channel?.id || !p.reusable)
             throw new ManagementError('profile', 'Choose a reusable streaming profile owned by this channel.');
         if (p.status === 'active')
             throw new ManagementError('active', 'This profile is receiving video. Do not change its saved configuration during transmission.');
         await this.slots[lang].profileStore.save(JSON.stringify(decodeProfile(JSON.stringify(p))));
         this.profiles[lang] = publicProfile(p);
     }
-    async clearProfile(lang: Language): Promise<void> { language(lang); await this.idle(lang); await this.slots[lang].profileStore.clear(); delete this.profiles[lang]; }
+    async clearProfile(lang: Language): Promise<void> { language(lang); await this.assertIdle(lang); await this.slots[lang].profileStore.clear(); delete this.profiles[lang]; }
     async savedProfile(lang: Language): Promise<PrivateProfile> {
         language(lang);
         const value = await this.slots[lang].profileStore.load();
