@@ -9,42 +9,55 @@ concurrency:
   group: bcc-stream-management-preview
   cancel-in-progress: true
 jobs:
-  verify:
+  source:
+    runs-on: ubuntu-latest
+    outputs:
+      ready: ${{ steps.check.outputs.ready }}
+    steps:
+      - uses: actions/checkout@v4
+        with: {persist-credentials: false}
+      - name: Verify the reviewed Stream Management input
+        id: check
+        shell: bash
+        run: |
+          set -euo pipefail
+          archive=broadcast-cc-stream-management-implementation.zip
+          if [[ ! -f "$archive" ]]; then
+            echo 'ready=false' >> "$GITHUB_OUTPUT"
+            echo 'No preview DMG: the reviewed source ZIP is missing from the root of the preview branch.' >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          echo "31738ae2871c0266eebb6c5574488556eee7490522a5365875c514734f25efe1  $archive" | sha256sum -c -
+          echo 'ready=true' >> "$GITHUB_OUTPUT"
+  mac:
+    needs: source
+    if: needs.source.outputs.ready == 'true'
     runs-on: macos-15-intel
     timeout-minutes: 35
     env:
       CSC_IDENTITY_AUTO_DISCOVERY: 'false'
       ARCHIVE: broadcast-cc-stream-management-implementation.zip
-      SOURCE_SHA256: 31738ae2871c0266eebb6c5574488556eee7490522a5365875c514734f25efe1
     steps:
       - uses: actions/checkout@v4
         with: {persist-credentials: false}
       - uses: actions/setup-node@v4
         with: {node-version: '24'}
-      - name: Apply reviewed sources and corrections
-        id: input
+      - name: Apply and verify exact preview source and clipboard correction
         shell: bash
         run: |
           set -euo pipefail
-          if [[ ! -f "$ARCHIVE" ]]; then
-            echo 'complete=false' >> "$GITHUB_OUTPUT"
-            echo 'Baseline check only. The exact Stream Management ZIP is not present. No DMG will be produced.' >> "$GITHUB_STEP_SUMMARY"
-            exit 0
-          fi
-          echo "$SOURCE_SHA256  $ARCHIVE" | shasum -a 256 -c -
           unzip -q "$ARCHIVE" -d "$RUNNER_TEMP/input"
           patch="$RUNNER_TEMP/input/stream-management-patch"
           node --test "$patch/validation/apply-package.test.mjs"
           node "$patch/apply-stream-management.mjs" "$GITHUB_WORKSPACE" --apply
           git apply --check preview/stream-management-electron44.patch
           git apply preview/stream-management-electron44.patch
-          test "$(git hash-object apps/control-center/src/stream-management-main.ts)" = 4bb6256989f93a4dd01cd908995c83963fb56ec7 || test "$(git hash-object apps/control-center/src/stream-management-main.ts | cut -c1-7)" = 4bb6256
+          test "$(git hash-object apps/control-center/src/stream-management-main.ts)" = 4bb6256e503006a1aeff9754e2651b7f7a915102
           test -s apps/control-center/tests/stream-management.test.mjs
-          echo 'complete=true' >> "$GITHUB_OUTPUT"
-      - name: Install dependencies
+      - name: Install application dependencies
         working-directory: apps/control-center
         run: npm install --no-fund --no-audit
-      - name: Typecheck, run regression tests and build the Electron app
+      - name: Typecheck, run full regression suite and build
         working-directory: apps/control-center
         run: npm run typecheck && npm test && npm run build
       - name: Eight existing macOS Electron smoke tests
@@ -55,18 +68,15 @@ jobs:
           for suite in smoke smoke-obs smoke-offline smoke-audio smoke-service-audio smoke-readiness smoke-live smoke-operator; do
             ./node_modules/.bin/electron scripts/run-smoke.cjs "$suite.cjs"
           done
-      - name: Test Stream Management menu, IPC, account view and recurrence in Electron
-        if: steps.input.outputs.complete == 'true'
+      - name: Stream Management menu, renderer, recurrence and independent account slots
         working-directory: apps/control-center
         run: ./node_modules/.bin/electron scripts/smoke-stream-management.cjs
-      - name: Build universal Mac preview (not a release)
-        if: steps.input.outputs.complete == 'true'
+      - name: Package a universal preview; never publish
         working-directory: apps/control-center
         run: |
           npm pkg set 'version=0.3.0-alpha.3'
           npm run dist:mac
-      - name: Mount disk image and verify version, application payload and both CPU architectures
-        if: steps.input.outputs.complete == 'true'
+      - name: Mount and verify installer, both CPU architectures and packaged Stream Management files
         working-directory: apps/control-center
         shell: bash
         run: |
@@ -80,14 +90,13 @@ jobs:
           plist="${apps[0]}/Contents/Info.plist"
           exe=$(/usr/libexec/PlistBuddy -c 'Print CFBundleExecutable' "$plist")
           lipo -verify_arch x86_64 arm64 "${apps[0]}/Contents/MacOS/$exe"
-          asar="${apps[0]}/Contents/Resources/app.asar"
-          ./node_modules/.bin/asar extract "$asar" "$RUNNER_TEMP/packed"
+          ./node_modules/.bin/asar extract "${apps[0]}/Contents/Resources/app.asar" "$RUNNER_TEMP/packed"
           test "$(node -p 'require(process.argv[1]).version' "$RUNNER_TEMP/packed/package.json")" = 0.3.0-alpha.3
           for f in live-main.cjs stream-management-preload.cjs renderer/stream-management.html renderer/stream-management-renderer.js; do cmp "dist/$f" "$RUNNER_TEMP/packed/dist/$f"; done
           (cd release && shasum -a 256 *.dmg > SHA256SUMS.txt)
-          printf 'commit=%s\nsource_zip_sha256=%s\n' "$GITHUB_SHA" "$SOURCE_SHA256" > release/BUILD.txt
-      - uses: actions/upload-artifact@v4
-        if: success() && steps.input.outputs.complete == 'true'
+          printf 'commit=%s\nsource_zip_sha256=%s\n' "$GITHUB_SHA" "$(shasum -a 256 "../../$ARCHIVE" | cut -d ' ' -f 1)" > release/BUILD.txt
+      - name: Upload tested preview disk image
+        uses: actions/upload-artifact@v4
         with:
           name: Stream-Management-Preview-macOS-universal
           path: |
