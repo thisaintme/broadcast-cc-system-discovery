@@ -10,20 +10,20 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with: {fetch-depth: 0}
-      - name: Apply pinned integration, stage source and validation manifest
+      - name: Assemble reviewed app sources
         run: |
           set -euo pipefail
           git show f56306a621a674abfeb33f83e7a37ce278e6712e:.github/workflows/assemble-combined-preview.yml | sed -n '/^          set -euo pipefail$/,/^          PY$/p' | sed 's/^          //' > "$RUNNER_TEMP/assemble.sh"
           bash "$RUNNER_TEMP/assemble.sh"
           python3 -c "from pathlib import Path;p=Path('apps/control-center/src/desk-tokens.css');p.write_text(p.read_text().rstrip()+'\n')"
+          mkdir -p preview
           cp .github/workflows/stream-management-preview.yml preview/combined-a4-workflow.txt
           git restore --source=HEAD --staged --worktree .github/workflows
           git add apps/control-center preview/combined-a4-workflow.txt
           git diff --cached --check
           git config user.name 'github-actions[bot]'; git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git commit -m 'Combine reviewed operator desk, explicit scheduling navigation and YouTube tooling'
+          git commit -m 'Combine reviewed operator desk, explicit planning navigation and YouTube tooling'
           git push origin HEAD:refs/heads/integration/redesign-and-youtube-a4
-          git ls-tree HEAD apps; git ls-tree HEAD preview/combined-a4-workflow.txt
           tar -czf "$RUNNER_TEMP/combined.tgz" apps/control-center
       - uses: actions/upload-artifact@v4
         with:
