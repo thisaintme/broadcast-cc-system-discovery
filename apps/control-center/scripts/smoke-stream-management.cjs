@@ -1,6 +1,9 @@
 'use strict';
 // Runs in native Electron, using a disposable profile and no Google credentials.
 const { app, BrowserWindow, Menu, dialog } = require('electron');
+// Match scripts/run-smoke.cjs: the hosted Intel VM has no usable hardware GPU.
+// This affects the test process, not the packaged application or any assertion.
+app.disableHardwareAcceleration();
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
@@ -45,7 +48,7 @@ require('../dist/live-main.cjs');
   await assert.rejects(()=>run('window.streamManagement.preview({unexpected:true})'));
   assert.equal((await run('window.streamManagement.panel()')).state.occurrences.length,0);
   assert.equal(unexpectedDialogs,0);assert.equal(remoteRequests,0);
-  fs.mkdirSync('release',{recursive:true});fs.writeFileSync('release/smoke-stream-management.png',(await win.webContents.capturePage()).toPNG());
+  fs.mkdirSync('release',{recursive:true});const png=(await win.webContents.capturePage()).toPNG();assert.ok(png.length>1000,'Native renderer produced a nonempty screenshot');fs.writeFileSync('release/smoke-stream-management.png',png);
   console.log('PASS: real menu, renderer, validated IPC, two account slots and 8 Sundays across DST; no Google call or event creation.');
 })().then(()=>finish(0),e=>{console.error(e);finish(1);});
 function finish(code){clearTimeout(watchdog);try{fs.rmSync(profile,{recursive:true,force:true});}catch{}app.exit(code);}
