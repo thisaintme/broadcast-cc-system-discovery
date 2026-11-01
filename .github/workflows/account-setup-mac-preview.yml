@@ -1,0 +1,60 @@
+name: Account setup preview – macOS build and test
+on:
+  push:
+    branches: ['integration/account-setup-a5']
+    paths: ['apps/control-center/**', '.github/workflows/account-setup-mac-preview.yml']
+permissions: {contents: read}
+concurrency: {group: account-setup-mac-a5, cancel-in-progress: true}
+jobs:
+  mac:
+    runs-on: macos-15-intel
+    timeout-minutes: 25
+    env: {CSC_IDENTITY_AUTO_DISCOVERY: 'false'}
+    defaults: {run: {working-directory: apps/control-center, shell: bash}}
+    steps:
+      - uses: actions/checkout@v4
+        with: {persist-credentials: false}
+      - uses: actions/setup-node@v4
+        with: {node-version: '24'}
+      - name: Install, typecheck and build the candidate
+        run: npm install --no-audit --no-fund && npm run typecheck && npm run build
+      - name: Full regression suite
+        run: |
+          set -euo pipefail
+          node --experimental-transform-types --test --test-reporter=tap tests/*.test.mjs > "$RUNNER_TEMP/regression.tap" || { grep -A15 '^not ok' "$RUNNER_TEMP/regression.tap"; exit 1; }
+          tail -9 "$RUNNER_TEMP/regression.tap"
+      - name: Exercise manual key entry and no-file OAuth setup in native Electron
+        run: ./node_modules/.bin/electron scripts/smoke-stream-management.cjs
+      - name: Existing native desk, OBS and design scenarios
+        run: |
+          set -euo pipefail
+          for suite in smoke smoke-obs smoke-offline smoke-audio smoke-service-audio smoke-readiness smoke-live smoke-operator smoke-design; do ./node_modules/.bin/electron scripts/run-smoke.cjs "$suite.cjs"; done
+      - name: Package tested app (preview only)
+        run: ./node_modules/.bin/electron-builder --mac dmg --universal --publish never
+      - name: Verify disk image, architectures, version, desk navigation and both password fields in mounted app
+        run: |
+          set -euo pipefail
+          image=release/Broadcast-Control-Center-Preview-0.3.0-alpha.5-universal.dmg
+          hdiutil verify "$image"
+          volume="$RUNNER_TEMP/accounts-preview-volume"; mkdir "$volume"
+          hdiutil attach -readonly -nobrowse -mountpoint "$volume" "$image"
+          trap 'hdiutil detach "$volume"' EXIT
+          app=("$volume"/*.app); test "${#app[@]}" -eq 1
+          plist="${app[0]}/Contents/Info.plist"
+          binary="${app[0]}/Contents/MacOS/$(/usr/libexec/PlistBuddy -c 'Print CFBundleExecutable' "$plist")"
+          lipo "$binary" -verify_arch x86_64 arm64
+          node scripts/check-mounted-preview.cjs "$binary"
+          (cd release && shasum -a 256 *.dmg > SHA256SUMS.txt)
+          printf 'commit=%s\narchitectures=x86_64 arm64\n' "$GITHUB_SHA" > release/BUILD.txt
+          grep -E '^# (tests|pass|fail|skipped) ' "$RUNNER_TEMP/regression.tap" >> release/BUILD.txt
+      - name: Upload verified preview
+        uses: actions/upload-artifact@v4
+        with:
+          name: Accounts-Preview-macOS-universal
+          path: |
+            apps/control-center/release/Broadcast-Control-Center-Preview-0.3.0-alpha.5-universal.dmg
+            apps/control-center/release/SHA256SUMS.txt
+            apps/control-center/release/BUILD.txt
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 14
