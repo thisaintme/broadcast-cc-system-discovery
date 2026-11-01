@@ -1,24 +1,16 @@
-name: Finalize verified Electron 44 wiring
+name: Verify transferred regression source
 on:
   push:
     branches: ['preview/stream-management-dmg']
     paths: ['.github/workflows/preview-import-wiring.yml']
-permissions: {contents: write}
+permissions: {contents: read}
 jobs:
-  import:
-    if: github.ref == 'refs/heads/preview/stream-management-dmg'
+  verify:
     runs-on: ubuntu-latest
-    defaults: {run: {working-directory: apps/control-center}}
     steps:
-      - uses: actions/checkout@v4
-      - name: Verify and commit three existing file corrections
+      - name: Read the transferred source from this repository
+        env: {GH_TOKEN: '${{ github.token }}'}
         run: |
-          set -euo pipefail
-          sed -i 's/async value=>{clipboard.writeText(watchUrl(/async value=>{await clipboard.writeText(watchUrl(/' src/youtube-main.ts
-          sed -i 's@rtmps://a\.rtmp\.youtube\.com/live2@rtmps://a.rtmps.youtube.com/live2@g' tests/youtube-cancellation.test.mjs tests/youtube.test.mjs
-          test "$(git hash-object src/youtube-main.ts)" = 7a61539e1ce9aa2903cdd8586d8aff71a31ffe94
-          test "$(git hash-object tests/youtube-cancellation.test.mjs)" = 91dff06f3b877b6bb7e4c82fca40d0b51b6bb4f6
-          test "$(git hash-object tests/youtube.test.mjs)" = e21824cefd13fba6061ac36973ab97b1a5f1dea6
-          git add -- src/youtube-main.ts tests/youtube-cancellation.test.mjs tests/youtube.test.mjs
-          git -c user.name='github-actions[bot]' -c user.email='41898282+github-actions[bot]@users.noreply.github.com' commit -m 'fix(preview): use asynchronous clipboard and verified RTMPS test fixtures'
-          git push origin HEAD:refs/heads/preview/stream-management-dmg
+          gh api "repos/$GITHUB_REPOSITORY/git/blobs/c7459af42b35447e58d6d683f04c6122db7c1b2e" --jq .content | base64 -d > regression.mjs
+      - uses: actions/upload-artifact@v4
+        with: {name: regression-source-verification, path: regression.mjs, retention-days: 1}
