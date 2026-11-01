@@ -1,0 +1,28 @@
+name: Assemble account setup preview source
+on:
+  push:
+    branches: ['integration/account-setup-a5']
+    paths: ['tools/assemble-account-setup-a5.py', '.github/workflows/assemble-account-setup-a5.yml']
+permissions: {contents: write}
+jobs:
+  prepare:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - uses: actions/checkout@v4
+      - name: Apply account setup changes only on the integration branch
+        run: |
+          set -eu
+          python3 tools/assemble-account-setup-a5.py
+          git add apps/control-center workflow-a5.txt
+          git diff --cached --check
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git commit -m 'Wire masked per-channel key entry and shared Desktop sign-in setup'
+          git push origin HEAD:refs/heads/integration/account-setup-a5
+          tar -czf "$RUNNER_TEMP/a5-source.tgz" apps/control-center
+      - uses: actions/upload-artifact@v4
+        with:
+          name: account-setup-source-for-checks
+          path: ${{ runner.temp }}/a5-source.tgz
+          retention-days: 1
