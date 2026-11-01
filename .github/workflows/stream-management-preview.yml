@@ -31,7 +31,8 @@ jobs:
       - name: Full application regression suite
         run: |
           set -euo pipefail
-          node --experimental-transform-types --test --test-reporter=tap tests/*.test.mjs | tee "$RUNNER_TEMP/regression.tap"
+          if ! node --experimental-transform-types --test --test-reporter=tap tests/*.test.mjs > "$RUNNER_TEMP/regression.tap"; then grep -A12 -E '^not ok' "$RUNNER_TEMP/regression.tap"; exit 1; fi
+          tail -n 9 "$RUNNER_TEMP/regression.tap"
       - name: Eight native Electron regression scenarios
         run: |
           set -euo pipefail
@@ -44,8 +45,9 @@ jobs:
           ./node_modules/.bin/electron scripts/smoke-stream-management.cjs
           cp release/smoke-stream-management.png "$RUNNER_TEMP/smoke-stream-management.png"
           cp -R dist "$RUNNER_TEMP/tested-dist"
-      - name: Build universal preview DMG (never publish)
-        run: npm run dist:mac
+      - name: Build the universal preview disk image from the tested dist (never publish)
+        id: package
+        run: ./node_modules/.bin/electron-builder --mac dmg --universal --publish never
       - name: Mount the installer, verify both architectures, compare tested code and launch the packaged app
         run: |
           set -euo pipefail
@@ -58,10 +60,33 @@ jobs:
           plist="${app[0]}/Contents/Info.plist"
           exe=$(/usr/libexec/PlistBuddy -c 'Print CFBundleExecutable' "$plist")
           binary="${app[0]}/Contents/MacOS/$exe"
-          lipo -verify_arch x86_64 arm64 "$binary"
-          ./node_modules/.bin/asar extract "${app[0]}/Contents/Resources/app.asar" "$RUNNER_TEMP/packed"
-          test "$(node -p 'require(process.argv[1]).version' "$RUNNER_TEMP/packed/package.json")" = '0.3.0-alpha.3'
-          diff -qr "$RUNNER_TEMP/tested-dist" "$RUNNER_TEMP/packed/dist"
+          lipo "$binary" -archs
+          lipo "$binary" -verify_arch x86_64 arm64
+          python3 - "${app[0]}/Contents/Resources/app.asar" "$RUNNER_TEMP/tested-dist" <<'PY'
+          import sys,struct,json
+          from pathlib import Path
+          with open(sys.argv[1], 'rb') as f:
+              signature, header_len, pickle_len, json_len=struct.unpack('<IIII', f.read(16))
+              assert signature==4 and 0 < json_len <= pickle_len <= header_len <= 64*1024*1024
+              files=json.loads(f.read(json_len))['files']
+              def content(node):
+                  assert not node.get('unpacked')
+                  start, size=int(node['offset']), int(node['size'])
+                  assert start >= 0 and size >= 0
+                  f.seek(8+header_len+start); data=f.read(size)
+                  assert len(data)==size; return data
+              def walk(nodes, prefix=''):
+                  for name, n in nodes.items():
+                      rel=prefix+name
+                      if 'files' in n: yield from walk(n['files'],rel+'/')
+                      else: yield rel,n
+              assert json.loads(content(files['package.json']))['version']=='0.3.0-alpha.3'
+              root=Path(sys.argv[2]); packed=dict(walk(files['dist']['files']))
+              expected={p.relative_to(root).as_posix():p for p in root.rglob('*') if p.is_file()}
+              assert expected.keys()==packed.keys(), 'Packaged file list differs'
+              for rel,p in expected.items(): assert p.read_bytes()==content(packed[rel]), rel
+              print(f'All {len(expected)} compiled files match the tested bytes.')
+          PY
           node scripts/check-mounted-preview.cjs "$binary"
           cp "$RUNNER_TEMP/smoke-stream-management.png" release/
           (cd release && shasum -a 256 *.dmg > SHA256SUMS.txt)
@@ -80,3 +105,15 @@ jobs:
           if-no-files-found: error
           compression-level: 0
           retention-days: 14
+      - name: Preserve installer and test evidence for diagnostics if packaging passed but verification failed
+        if: failure() && steps.package.outcome == 'success'
+        uses: actions/upload-artifact@v4
+        with:
+          name: Internal-DMG-candidate-for-diagnosis-not-verified
+          path: |
+            apps/control-center/release/*.dmg
+            ${{ runner.temp }}/tested-dist
+            ${{ runner.temp }}/regression.tap
+            ${{ runner.temp }}/smoke-stream-management.png
+          compression-level: 0
+          retention-days: 1
