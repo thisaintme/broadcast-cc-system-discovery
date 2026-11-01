@@ -1,4 +1,4 @@
-name: Import verified wiring into preview source
+name: Finalize verified Electron 44 wiring
 on:
   push:
     branches: ['preview/stream-management-dmg']
@@ -8,12 +8,17 @@ jobs:
   import:
     if: github.ref == 'refs/heads/preview/stream-management-dmg'
     runs-on: ubuntu-latest
+    defaults: {run: {working-directory: apps/control-center}}
     steps:
       - uses: actions/checkout@v4
-      - name: Check four reviewed blob hashes and commit only those files
+      - name: Verify and commit three existing file corrections
         run: |
           set -euo pipefail
-          python3 preview/wire-stream-management.py
-          git add -- apps/control-center/scripts/build.mjs apps/control-center/src/live-main.ts apps/control-center/src/youtube-main.ts apps/control-center/src/youtube-model.ts
-          git -c user.name='github-actions[bot]' -c user.email='41898282+github-actions[bot]@users.noreply.github.com' commit -m 'feat(preview): wire stream management into the Electron app and build'
+          sed -i 's/async value=>{clipboard.writeText(watchUrl(/async value=>{await clipboard.writeText(watchUrl(/' src/youtube-main.ts
+          sed -i 's@rtmps://a\.rtmp\.youtube\.com/live2@rtmps://a.rtmps.youtube.com/live2@g' tests/youtube-cancellation.test.mjs tests/youtube.test.mjs
+          test "$(git hash-object src/youtube-main.ts)" = 7a61539e1ce9aa2903cdd8586d8aff71a31ffe94
+          test "$(git hash-object tests/youtube-cancellation.test.mjs)" = 91dff06f3b877b6bb7e4c82fca40d0b51b6bb4f6
+          test "$(git hash-object tests/youtube.test.mjs)" = e21824cefd13fba6061ac36973ab97b1a5f1dea6
+          git add -- src/youtube-main.ts tests/youtube-cancellation.test.mjs tests/youtube.test.mjs
+          git -c user.name='github-actions[bot]' -c user.email='41898282+github-actions[bot]@users.noreply.github.com' commit -m 'fix(preview): use asynchronous clipboard and verified RTMPS test fixtures'
           git push origin HEAD:refs/heads/preview/stream-management-dmg
