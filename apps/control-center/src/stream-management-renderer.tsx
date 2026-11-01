@@ -8,6 +8,9 @@ declare global {
         streamManagement: ManagementBridge;
     }
 }
+// Same origin as the desk; share only the appearance preference, never account data.
+const syncTheme=()=>{let theme='dark';try{if(localStorage.getItem('bcc-ui-theme')==='light')theme='light';}catch{}document.documentElement.dataset.theme=theme;};
+syncTheme();window.addEventListener('storage',e=>{if(e.key==='bcc-ui-theme'||e.key===null)syncTheme();});
 const bridge = window.streamManagement;
 const presets = { de: ['Gottesdienst', 'Andacht'], ru: ['Богослужение', 'Духовное размышление'] };
 const defaultDraft = (language: Language): DestinationDraft => ({ language, title: { mode: 'dated', text: presets[language][0] }, description: '', privacy: 'public', madeForKids: false });

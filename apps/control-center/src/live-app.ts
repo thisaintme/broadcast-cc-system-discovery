@@ -4,6 +4,7 @@ import type {ServiceChange} from './live-schedule.ts';
 import type {OperatorQuery,OperatorView} from './obs-operator.ts';
 export interface LiveSiteSnapshot{version:string;workspace:Workspace;live:LiveSnapshot;companionResult:string}
 export interface LiveAppBridge extends LiveBridge{
+  openStreamManagement():Promise<void>;
   site():Promise<LiveSiteSnapshot>;onSite(callback:(s:LiveSiteSnapshot)=>void):()=>void;
   connect(password:string):Promise<LiveSiteSnapshot>;
   saveWorkspace(workspace:Workspace):Promise<LiveSiteSnapshot>;
