@@ -1,7 +1,7 @@
 name: Control Center Preview - macOS
 on:
   push:
-    branches: [main, control-center-m1]
+    branches: [main, control-center-m1, feat/claude-design-ui]
     paths:
       - 'apps/control-center/**'
       - '.github/workflows/control-center-preview.yml'
@@ -49,6 +49,8 @@ jobs:
         run: ./node_modules/.bin/electron scripts/run-smoke.cjs smoke-live.cjs
       - name: Smoke-test expanded OBS operator desk with live stream preserved
         run: ./node_modules/.bin/electron scripts/run-smoke.cjs smoke-operator.cjs
+      - name: Smoke-test redesigned shell, cue panels and responsive states
+        run: ./node_modules/.bin/electron scripts/run-smoke.cjs smoke-design.cjs
       - name: Build universal Mac app
         run: npm run dist:mac
       - name: Record build identity and package checksums

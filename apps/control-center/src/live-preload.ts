@@ -2,6 +2,7 @@ import {contextBridge,ipcRenderer} from 'electron';
 import type {LiveAppBridge,LiveSiteSnapshot} from './live-app.ts';
 const onSite=(callback:(s:LiveSiteSnapshot)=>void)=>{const listener=(_event:unknown,s:LiveSiteSnapshot)=>callback(s);ipcRenderer.on('live:state',listener);return()=>ipcRenderer.removeListener('live:state',listener);};
 const api:LiveAppBridge={
+  openStreamManagement:()=>ipcRenderer.invoke('live:open-stream-management'),
   site:()=>ipcRenderer.invoke('live:site'),snapshot:()=>ipcRenderer.invoke('live:snapshot'),
   onSite,onState:callback=>onSite(s=>callback(s.live)),
   connect:password=>ipcRenderer.invoke('live:connect',password),saveWorkspace:w=>ipcRenderer.invoke('live:save',w),

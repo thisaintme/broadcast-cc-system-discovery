@@ -1,4 +1,4 @@
-name: Stream Management — tested Mac preview only
+name: Operator desk + YouTube — tested Mac preview
 on:
   push:
     branches: ['preview/stream-management-dmg']
@@ -33,10 +33,10 @@ jobs:
           set -euo pipefail
           if ! node --experimental-transform-types --test --test-reporter=tap tests/*.test.mjs > "$RUNNER_TEMP/regression.tap"; then grep -A12 -E '^not ok' "$RUNNER_TEMP/regression.tap"; exit 1; fi
           tail -n 9 "$RUNNER_TEMP/regression.tap"
-      - name: Eight native Electron regression scenarios
+      - name: Nine native Electron scenarios including the redesigned desk
         run: |
           set -euo pipefail
-          for suite in smoke smoke-obs smoke-offline smoke-audio smoke-service-audio smoke-readiness smoke-live smoke-operator; do
+          for suite in smoke smoke-obs smoke-offline smoke-audio smoke-service-audio smoke-readiness smoke-live smoke-operator smoke-design; do
             ./node_modules/.bin/electron scripts/run-smoke.cjs "$suite.cjs"
           done
       - name: Stream Management menu, account slots and eight Sundays across DST
@@ -44,11 +44,12 @@ jobs:
           set -euo pipefail
           ./node_modules/.bin/electron scripts/smoke-stream-management.cjs
           cp release/smoke-stream-management.png "$RUNNER_TEMP/smoke-stream-management.png"
+          cp release/smoke-design-{dark,light}.png "$RUNNER_TEMP/"
           cp -R dist "$RUNNER_TEMP/tested-dist"
       - name: Build the universal preview disk image from the tested dist (never publish)
         id: package
         run: ./node_modules/.bin/electron-builder --mac dmg --universal --publish never
-      - name: Mount the installer, verify both architectures, compare tested code and launch the packaged app
+      - name: Mount the DMG and exercise the redesigned desk → YouTube → eight paired Sundays
         run: |
           set -euo pipefail
           dmg=(release/*.dmg); test "${#dmg[@]}" -eq 1; test -s "${dmg[0]}"
@@ -80,7 +81,7 @@ jobs:
                       rel=prefix+name
                       if 'files' in n: yield from walk(n['files'],rel+'/')
                       else: yield rel,n
-              assert json.loads(content(files['package.json']))['version']=='0.3.0-alpha.3'
+              assert json.loads(content(files['package.json']))['version']=='0.3.0-alpha.4'
               root=Path(sys.argv[2]); packed=dict(walk(files['dist']['files']))
               expected={p.relative_to(root).as_posix():p for p in root.rglob('*') if p.is_file()}
               assert expected.keys()==packed.keys(), 'Packaged file list differs'
@@ -88,7 +89,7 @@ jobs:
               print(f'All {len(expected)} compiled files match the tested bytes.')
           PY
           node scripts/check-mounted-preview.cjs "$binary"
-          cp "$RUNNER_TEMP/smoke-stream-management.png" release/
+          cp "$RUNNER_TEMP/smoke-stream-management.png" "$RUNNER_TEMP"/smoke-design-{dark,light}.png release/
           (cd release && shasum -a 256 *.dmg > SHA256SUMS.txt)
           printf 'commit=%s\narchitectures=x86_64 arm64\n' "$GITHUB_SHA" > release/BUILD.txt
           grep -E '^# (tests|pass|fail|skipped) ' "$RUNNER_TEMP/regression.tap" >> release/BUILD.txt
@@ -96,12 +97,13 @@ jobs:
       - name: Upload verified disk image
         uses: actions/upload-artifact@v4
         with:
-          name: Stream-Management-Preview-macOS-universal
+          name: Broadcast-CC-Redesign-YouTube-macOS-universal
           path: |
             apps/control-center/release/*.dmg
             apps/control-center/release/SHA256SUMS.txt
             apps/control-center/release/BUILD.txt
             apps/control-center/release/smoke-stream-management.png
+            apps/control-center/release/smoke-design-*.png
           if-no-files-found: error
           compression-level: 0
           retention-days: 14

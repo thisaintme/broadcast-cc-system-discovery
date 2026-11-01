@@ -1,0 +1,178 @@
+/* Broadcast CC — colour tokens. Dark is the default (broadcast desk); light via [data-theme="light"].
+   Rule: brand accent (--accent-*) is for navigation, selection, primary actions and focus ONLY.
+   Operational state always uses --status-* tokens, and is never colour-only (pair with icon + text). */
+:root{
+  /* Base neutrals — graphite, very slightly cool */
+  --gray-0:#0e1013;--gray-50:#14171b;--gray-100:#1a1e23;--gray-150:#21262c;--gray-200:#2a3038;--gray-300:#38404a;--gray-400:#4d5662;--gray-500:#687280;--gray-600:#8c95a1;--gray-700:#adb4be;--gray-800:#d1d6dc;--gray-900:#eceef1;--gray-1000:#ffffff;
+  /* Brand accent — "Vesper" blue-violet */
+  --vesper-200:#c3cbff;--vesper-300:#a7b3ff;--vesper-400:#8291f5;--vesper-500:#5a6fe6;--vesper-600:#4a5fd9;--vesper-700:#3d50bf;--vesper-800:#2c3a8f;--vesper-900:#1f2752;--vesper-950:#181d38;
+  /* Status base hues */
+  --red-300:#ff8f87;--red-500:#e0413a;--red-600:#cc2f2a;--red-900:#3b1615;
+  --green-300:#6fd39a;--green-500:#33a865;--green-600:#25874f;--green-900:#12301f;
+  --amber-300:#f3c766;--amber-500:#e3a92b;--amber-900:#33280e;
+  --orange-300:#ffa66b;--orange-500:#ef7a2c;--orange-600:#c45716;--orange-900:#3a2010;
+  --cyan-300:#7fd6ee;--cyan-500:#3cb4d6;--cyan-900:#10303a;
+
+  color-scheme:dark;
+  /* Surfaces */
+  --surface-app:var(--gray-0);
+  --surface-panel:var(--gray-50);
+  --surface-card:var(--gray-100);
+  --surface-raised:var(--gray-150);
+  --surface-input:var(--gray-50);
+  --surface-hover:rgba(255,255,255,.05);
+  --surface-pressed:rgba(255,255,255,.09);
+  --surface-selected:var(--vesper-950);
+  --surface-overlay:rgba(6,8,10,.72);
+  --surface-inverse:var(--gray-900);
+  /* Text */
+  --text-primary:var(--gray-900);
+  --text-secondary:var(--gray-700);
+  --text-tertiary:var(--gray-600);
+  --text-disabled:var(--gray-500);
+  --text-inverse:var(--gray-0);
+  --text-on-accent:#ffffff;
+  --text-link:var(--vesper-300);
+  /* Borders */
+  --border-subtle:var(--gray-200);
+  --border-default:var(--gray-300);
+  --border-strong:var(--gray-400);
+  --border-selected:var(--vesper-500);
+  /* Focus */
+  --focus-ring:var(--vesper-300);
+  --focus-ring-offset:var(--gray-0);
+  /* Actions */
+  --action-primary-bg:var(--vesper-600);
+  --action-primary-bg-hover:var(--vesper-500);
+  --action-primary-bg-active:var(--vesper-700);
+  --action-primary-fg:#ffffff;
+  --action-secondary-bg:var(--gray-150);
+  --action-secondary-bg-hover:var(--gray-200);
+  --action-secondary-bg-active:var(--gray-300);
+  --action-secondary-fg:var(--gray-900);
+  --action-secondary-border:var(--gray-300);
+  --action-destructive-bg:var(--red-600);
+  --action-destructive-bg-hover:var(--red-500);
+  --action-destructive-bg-active:#a92521;
+  --action-destructive-fg:#ffffff;
+  --action-disabled-bg:var(--gray-100);
+  --action-disabled-fg:var(--gray-500);
+  /* Brand */
+  --brand-accent:var(--vesper-600);
+  --brand-accent-soft:var(--vesper-950);
+  --brand-accent-text:var(--vesper-300);
+
+  /* Status — each has fg (text/icon on panels), bg (soft fill), border, solid (filled badge) + on-solid */
+  --status-live-fg:var(--red-300);--status-live-bg:var(--red-900);--status-live-border:#7a2420;--status-live-solid:var(--red-600);--status-live-on-solid:#ffffff;
+  --status-ready-fg:var(--green-300);--status-ready-bg:var(--green-900);--status-ready-border:#22603c;--status-ready-solid:var(--green-600);--status-ready-on-solid:#ffffff;
+  --status-progress-fg:var(--cyan-300);--status-progress-bg:var(--cyan-900);--status-progress-border:#1d5a6b;--status-progress-solid:var(--cyan-500);--status-progress-on-solid:#08222b;
+  --status-warning-fg:var(--amber-300);--status-warning-bg:var(--amber-900);--status-warning-border:#6a5216;--status-warning-solid:var(--amber-500);--status-warning-on-solid:#1d1503;
+  --status-error-fg:var(--orange-300);--status-error-bg:var(--orange-900);--status-error-border:#76401c;--status-error-solid:var(--orange-600);--status-error-on-solid:#ffffff;
+  --status-offline-fg:var(--gray-600);--status-offline-bg:var(--gray-150);--status-offline-border:var(--gray-300);--status-offline-solid:var(--gray-400);--status-offline-on-solid:#ffffff;
+  --status-unknown-fg:var(--gray-800);--status-unknown-bg:transparent;--status-unknown-border:var(--gray-500);--status-unknown-solid:var(--gray-300);--status-unknown-on-solid:var(--gray-900);
+  --status-disabled-fg:var(--gray-500);--status-disabled-bg:var(--gray-100);--status-disabled-border:var(--gray-200);--status-disabled-solid:var(--gray-200);--status-disabled-on-solid:var(--gray-600);
+}
+[data-theme="light"]{
+  color-scheme:light;
+  --surface-app:#eef0f3;
+  --surface-panel:#f7f8fa;
+  --surface-card:#ffffff;
+  --surface-raised:#ffffff;
+  --surface-input:#ffffff;
+  --surface-hover:rgba(15,20,30,.045);
+  --surface-pressed:rgba(15,20,30,.08);
+  --surface-selected:#eceffe;
+  --surface-overlay:rgba(20,24,30,.45);
+  --surface-inverse:#14171b;
+  --text-primary:#14171b;
+  --text-secondary:#454d57;
+  --text-tertiary:#5b6470;
+  --text-disabled:#949ca6;
+  --text-inverse:#ffffff;
+  --text-link:#3646b0;
+  --border-subtle:#e1e4e8;
+  --border-default:#cdd2d8;
+  --border-strong:#9aa2ac;
+  --border-selected:#4a5fd9;
+  --focus-ring:#3d50bf;
+  --focus-ring-offset:#ffffff;
+  --action-primary-bg:#4a5fd9;--action-primary-bg-hover:#3d50bf;--action-primary-bg-active:#2c3a8f;
+  --action-secondary-bg:#ffffff;--action-secondary-bg-hover:#f1f3f5;--action-secondary-bg-active:#e5e8ec;--action-secondary-fg:#14171b;--action-secondary-border:#cdd2d8;
+  --action-destructive-bg:#c42a25;--action-destructive-bg-hover:#a92521;--action-destructive-bg-active:#8e1e1a;
+  --action-disabled-bg:#eceef1;--action-disabled-fg:#949ca6;
+  --brand-accent:#4a5fd9;--brand-accent-soft:#eceffe;--brand-accent-text:#3646b0;
+  --status-live-fg:#b3231e;--status-live-bg:#fdeceb;--status-live-border:#f2b3af;--status-live-solid:#c42a25;
+  --status-ready-fg:#16683a;--status-ready-bg:#e7f6ec;--status-ready-border:#a9dcbc;--status-ready-solid:#1e7d47;
+  --status-progress-fg:#0c5f78;--status-progress-bg:#e4f5fa;--status-progress-border:#a5dbea;--status-progress-solid:#1d8fb0;--status-progress-on-solid:#ffffff;
+  --status-warning-fg:#7a5600;--status-warning-bg:#fdf4dc;--status-warning-border:#ecd08a;--status-warning-solid:#e3a92b;
+  --status-error-fg:#a6420b;--status-error-bg:#fdede2;--status-error-border:#f3c1a0;--status-error-solid:#c45716;
+  --status-offline-fg:#5b6470;--status-offline-bg:#eef0f3;--status-offline-border:#cdd2d8;--status-offline-solid:#7a838e;
+  --status-unknown-fg:#2f353d;--status-unknown-bg:transparent;--status-unknown-border:#7a838e;--status-unknown-solid:#d1d6dc;--status-unknown-on-solid:#14171b;
+  --status-disabled-fg:#949ca6;--status-disabled-bg:#f1f3f5;--status-disabled-border:#e1e4e8;--status-disabled-solid:#e1e4e8;--status-disabled-on-solid:#7a838e;
+}
+
+:root{
+  --font-sans:"IBM Plex Sans",system-ui,-apple-system,"Segoe UI",sans-serif;
+  --font-mono:"IBM Plex Mono",ui-monospace,"SF Mono",Menlo,monospace;
+  --weight-regular:400;--weight-medium:500;--weight-semibold:600;--weight-bold:700;
+  /* Size / line-height pairs. Operational UI is compact; 12px is the floor and never carries critical state. */
+  --text-xs:12px;--leading-xs:16px;
+  --text-sm:13px;--leading-sm:18px;
+  --text-base:14px;--leading-base:20px;
+  --text-md:16px;--leading-md:24px;
+  --text-lg:18px;--leading-lg:26px;
+  --text-xl:22px;--leading-xl:28px;
+  --text-2xl:28px;--leading-2xl:34px;
+  --text-3xl:40px;--leading-3xl:44px;
+  --tracking-tight:-0.01em;--tracking-normal:0;--tracking-overline:0.06em;
+  /* Semantic roles */
+  --type-screen-title:var(--weight-semibold) var(--text-xl)/var(--leading-xl) var(--font-sans);
+  --type-section-title:var(--weight-semibold) var(--text-lg)/var(--leading-lg) var(--font-sans);
+  --type-card-title:var(--weight-semibold) var(--text-md)/var(--leading-md) var(--font-sans);
+  --type-body:var(--weight-regular) var(--text-base)/var(--leading-base) var(--font-sans);
+  --type-body-lg:var(--weight-regular) var(--text-md)/var(--leading-md) var(--font-sans);
+  --type-label:var(--weight-medium) var(--text-sm)/var(--leading-sm) var(--font-sans);
+  --type-overline:var(--weight-semibold) var(--text-xs)/var(--leading-xs) var(--font-sans);
+  --type-caption:var(--weight-regular) var(--text-xs)/var(--leading-xs) var(--font-sans);
+  --type-status:var(--weight-semibold) var(--text-sm)/var(--leading-sm) var(--font-sans);
+  --type-timer:var(--weight-medium) var(--text-3xl)/var(--leading-3xl) var(--font-mono);
+  --type-value:var(--weight-regular) var(--text-sm)/var(--leading-sm) var(--font-mono);
+  --numeric-tabular:tabular-nums; /* @kind other */
+}
+
+:root{
+  /* 4px base spacing */
+  --space-0:0;--space-0-5:2px;--space-1:4px;--space-1-5:6px;--space-2:8px;--space-3:12px;--space-4:16px;--space-5:20px;--space-6:24px;--space-8:32px;--space-10:40px;--space-12:48px;--space-16:64px;
+  /* Control heights — targets. Coarse pointers (tablet) get +4px via media query below. */
+  --control-sm:32px;--control-md:40px;--control-lg:48px;--control-xl:56px;
+  --target-min:40px;
+  /* Radii */
+  --radius-xs:3px;--radius-sm:5px;--radius-md:7px;--radius-lg:10px;--radius-xl:14px;--radius-pill:999px;
+  /* Borders */
+  --border-width:1px;--border-width-strong:2px;--focus-width:2px;--focus-offset:2px;
+  /* Elevation — dark mode relies on surface steps; shadows only for floating layers */
+  --shadow-none:none;
+  --shadow-raised:0 1px 0 rgba(255,255,255,.03) inset,0 1px 2px rgba(0,0,0,.35);
+  --shadow-popover:0 8px 24px rgba(0,0,0,.45),0 0 0 1px var(--border-default);
+  --shadow-dialog:0 24px 64px rgba(0,0,0,.55),0 0 0 1px var(--border-default);
+  --shadow-toast:0 10px 30px rgba(0,0,0,.5),0 0 0 1px var(--border-default);
+  /* Layout */
+  --layout-rail-width:232px;--layout-rail-collapsed:64px;--layout-statusbar-height:56px;--layout-content-max:1360px;--layout-gutter:24px;--layout-gutter-compact:16px;
+  --bp-tablet:768px; /* @kind other */--bp-laptop:1100px; /* @kind other */--bp-desktop:1360px; /* @kind other */
+  /* Z-index */
+  --z-statusbar:30; /* @kind other */--z-popover:40; /* @kind other */--z-dialog:50; /* @kind other */--z-toast:60; /* @kind other */
+}
+@media (pointer:coarse){:root{--control-sm:36px;--control-md:44px;--control-lg:52px;--target-min:44px}}
+[data-theme="light"]{
+  --shadow-raised:0 1px 2px rgba(20,24,30,.08);
+  --shadow-popover:0 8px 24px rgba(20,24,30,.14),0 0 0 1px var(--border-default);
+  --shadow-dialog:0 24px 64px rgba(20,24,30,.2),0 0 0 1px var(--border-default);
+  --shadow-toast:0 10px 30px rgba(20,24,30,.16),0 0 0 1px var(--border-default);
+}
+
+:root{
+  --duration-instant:0ms; /* @kind other */--duration-fast:110ms; /* @kind other */--duration-base:180ms; /* @kind other */--duration-slow:260ms; /* @kind other */
+  --ease-standard:cubic-bezier(.2,0,0,1); /* @kind other */--ease-enter:cubic-bezier(0,0,.2,1); /* @kind other */--ease-exit:cubic-bezier(.4,0,1,1); /* @kind other */
+  --spin-duration:900ms; /* @kind other */
+}
+@media (prefers-reduced-motion:reduce){:root{--duration-fast:0ms; /* @kind other */--duration-base:0ms; /* @kind other */--duration-slow:0ms; /* @kind other */--spin-duration:0ms; /* @kind other */}}

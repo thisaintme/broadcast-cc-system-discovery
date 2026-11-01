@@ -49,7 +49,7 @@ async function exportText(defaultPath:string,content:string,title:string):Promis
 }
 app.whenReady().then(async()=>{
   protocol.handle('bcc',async request=>{
-    const url=new URL(request.url),types:Record<string,string>={'/live.html':'text/html','/live-renderer.js':'text/javascript','/youtube.html':'text/html','/youtube-renderer.js':'text/javascript','/stream-management.html':'text/html','/stream-management-renderer.js':'text/javascript','/stream-management.css':'text/css','/styles.css':'text/css','/live.css':'text/css'};
+    const url=new URL(request.url),types:Record<string,string>={'/live.html':'text/html','/live-renderer.js':'text/javascript','/youtube.html':'text/html','/youtube-renderer.js':'text/javascript','/stream-management.html':'text/html','/stream-management-renderer.js':'text/javascript','/stream-management.css':'text/css','/desk-tokens.css':'text/css','/styles.css':'text/css','/live.css':'text/css'};
     if(url.host!=='app'||!types[url.pathname])return new Response('Not found',{status:404});
     const body=await readFile(path.join(__dirname,'renderer',url.pathname.slice(1)));
     return new Response(new Uint8Array(body),{headers:{'Content-Type':types[url.pathname]}});
@@ -67,6 +67,12 @@ app.whenReady().then(async()=>{
       next=applyServiceChange(next,{type:'add',service},live.snapshot().selectedService);await save(next);
     });
   }});
+  // Fixed, read-only navigation from the trusted desk; no encoder or account action.
+  ipcMain.handle('live:open-stream-management',async event=>{
+    sender(event);
+    if(!youtube)throw new Error('YouTube-Planung ist noch nicht bereit.');
+    try{await youtube.open();}catch{throw new Error('YouTube-Planung konnte nicht geöffnet werden. Versuchen Sie es nach der laufenden Aktion erneut.');}
+  });
   ipcMain.handle('live:site',event=>{sender(event);return state();});
   ipcMain.handle('live:snapshot',event=>{sender(event);return live.snapshot();});
   // Release/cancel never wait behind a device request, Google request or a native dialog.

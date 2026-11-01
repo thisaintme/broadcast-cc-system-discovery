@@ -5,7 +5,7 @@ for(const [entry,out] of [['main','main'],['preload','preload'],['live-main','li
   await build({entryPoints:[`src/${entry}.ts`],outfile:`dist/${out}.cjs`,bundle:true,platform:'node',target:'node22',format:'cjs',external:['electron'],sourcemap:false});
 }
 for(const entry of ['renderer','live-renderer','youtube-renderer','stream-management-renderer'])await build({entryPoints:[`src/${entry}.tsx`],outfile:`dist/renderer/${entry}.js`,bundle:true,platform:'browser',target:'chrome130',format:'iife',jsx:'automatic',minify:true,define:{'process.env.NODE_ENV':'"production"'}});
-for(const name of ['index.html','live.html','youtube.html','stream-management.html','stream-management.css','audio.css','live.css'])await copyFile(`src/${name}`,`dist/renderer/${name}`);
+for(const name of ['index.html','live.html','youtube.html','stream-management.html','stream-management.css','desk-tokens.css','audio.css','live.css'])await copyFile(`src/${name}`,`dist/renderer/${name}`);
 // The legacy index links styles.css only; retain its audio/readiness styles.
 await writeFile('dist/renderer/styles.css',(await readFile('src/styles.css','utf8'))+'\n'+(await readFile('src/audio.css','utf8')));
 await writeFile('dist/launcher.cjs',`const {app,BrowserWindow,Menu}=require('electron');
