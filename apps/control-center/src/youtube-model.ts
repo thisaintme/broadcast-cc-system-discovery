@@ -65,7 +65,7 @@ export function parseState(raw:unknown):YouTubeState{
 export function youtubeServer(server:unknown):string{
   if(typeof server!=='string')throw new YouTubeFailure('OBS does not expose a verifiable YouTube ingest server.');
   let u:URL;try{u=new URL(server);}catch{throw new YouTubeFailure('Configure an explicit YouTube RTMP/RTMPS server in OBS before using managed broadcasts.');}
-  if(!['rtmp:','rtmps:'].includes(u.protocol)||!(/^[a-z0-9-]+\.rtmp\.youtube\.com$/i.test(u.hostname))||u.username||u.password||u.search||u.hash||!['/live2','/live2/'].includes(u.pathname))throw new YouTubeFailure('OBS is not configured for a supported YouTube ingest server. No destination settings were changed.');
+  if(!['rtmp:','rtmps:'].includes(u.protocol)||!((u.protocol==='rtmps:'?/^[a-z0-9-]+\.rtmps\.youtube\.com$/i:/^[a-z0-9-]+\.rtmp\.youtube\.com$/i).test(u.hostname))||(u.port!==''&&u.port!==(u.protocol==='rtmps:'?'443':'1935'))||u.username||u.password||u.search||u.hash||!['/live2','/live2/'].includes(u.pathname))throw new YouTubeFailure('OBS is not configured for a supported YouTube ingest server. No destination settings were changed.');
   return u.href;
 }
 export const watchUrl=(id:string)=>`https://www.youtube.com/watch?v=${encodeURIComponent(identifier(id))}`;

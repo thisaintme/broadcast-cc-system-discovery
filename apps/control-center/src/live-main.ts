@@ -49,7 +49,7 @@ async function exportText(defaultPath:string,content:string,title:string):Promis
 }
 app.whenReady().then(async()=>{
   protocol.handle('bcc',async request=>{
-    const url=new URL(request.url),types:Record<string,string>={'/live.html':'text/html','/live-renderer.js':'text/javascript','/youtube.html':'text/html','/youtube-renderer.js':'text/javascript','/styles.css':'text/css','/live.css':'text/css'};
+    const url=new URL(request.url),types:Record<string,string>={'/live.html':'text/html','/live-renderer.js':'text/javascript','/youtube.html':'text/html','/youtube-renderer.js':'text/javascript','/stream-management.html':'text/html','/stream-management-renderer.js':'text/javascript','/stream-management.css':'text/css','/styles.css':'text/css','/live.css':'text/css'};
     if(url.host!=='app'||!types[url.pathname])return new Response('Not found',{status:404});
     const body=await readFile(path.join(__dirname,'renderer',url.pathname.slice(1)));
     return new Response(new Uint8Array(body),{headers:{'Content-Type':types[url.pathname]}});
@@ -57,7 +57,16 @@ app.whenReady().then(async()=>{
   session.defaultSession.setPermissionRequestHandler((_w,_p,callback)=>callback(false));session.defaultSession.setPermissionCheckHandler(()=>false);
   try{workspace=await loadWorkspace(store());}catch{live.release('Saved workspace could not be read. It has not been overwritten; import a valid workspace.');}
   // Credentials are loaded lazily when the YouTube manager is opened, not during OBS startup.
-  youtube=new YouTubeManager({workspace:()=>workspace,parent:()=>window,live,peer,journal,exclusive,notify:emit});
+  youtube=new YouTubeManager({workspace:()=>workspace,parent:()=>window,live,peer,journal,exclusive,notify:emit,saveService:async service=>{
+    await exclusive(async()=>{
+      const previous=workspace.services.find(s=>s.id===service.id);
+      if(previous&&previous.title===service.title&&previous.startsAt===service.startsAt)return;
+      if(previous&&live.snapshot().selectedService===service.id)throw new LiveFailure('The selected operator service cannot be changed. Select another service before updating its schedule.');
+      let next=workspace;
+      if(previous)next=applyServiceChange(next,{type:'remove',id:service.id},live.snapshot().selectedService);
+      next=applyServiceChange(next,{type:'add',service},live.snapshot().selectedService);await save(next);
+    });
+  }});
   ipcMain.handle('live:site',event=>{sender(event);return state();});
   ipcMain.handle('live:snapshot',event=>{sender(event);return live.snapshot();});
   // Release/cancel never wait behind a device request, Google request or a native dialog.
@@ -117,7 +126,7 @@ app.whenReady().then(async()=>{
     if(['start','stop','outro'].includes(command)){
       const ticket=live.ticket(),s=live.snapshot(),reason=s.reasons[command as LiveCommand];if(reason.length)throw new LiveFailure(reason.join(' '));
       const message=command==='start'?'Start the configured OBS stream?':command==='stop'?'Stop OBS transmission now?':'Mute service audio and show Outro?';
-      const detail=command==='start'?'This OBS-only action will mute the selected service input, put Intro on Program, then start the existing OBS destination. It does not publish an app-managed YouTube event. For coordinated publication use YouTube → Broadcast manager → Start broadcast with Intro.':command==='stop'?'This stops OBS transmission only. It does not complete an app-managed YouTube event. Use the YouTube manager to end the linked event and stop OBS together. No automatic restart will be attempted.':'This mutes the selected OBS service input, updates next-service text and shows Outro. It does not stop transmission.';
+      const detail=command==='start'?'This OBS-only action will mute the selected service input, put Intro on Program, then start the existing OBS destination. It does not publish an app-managed YouTube event. For coordinated publication use YouTube → Stream Management → Broadcast controls → Start broadcast with Intro.':command==='stop'?'This stops OBS transmission only. It does not complete an app-managed YouTube event. Use the YouTube manager to end the linked event and stop OBS together. No automatic restart will be attempted.':'This mutes the selected OBS service input, updates next-service text and shows Outro. It does not stop transmission.';
       const pick=await dialog.showMessageBox(window!,{type:'warning',buttons:['Cancel',command==='start'?'Start OBS stream':command==='stop'?'Stop OBS stream':'Show Outro'],defaultId:0,cancelId:0,message,detail});
       if(pick.response!==1)return live.snapshot();if(ticket!==live.ticket())throw new LiveFailure('OBS or control state changed during confirmation. Review and try the intended action again.');
     }
@@ -127,7 +136,7 @@ app.whenReady().then(async()=>{
   handle('live:export-journal',async()=>exportText('broadcast-cc-live-log.json',JSON.stringify(await journal.entries(),null,2)+'\n','Export local activity log'));
   const advanced=()=>{youtube?.cancel();live.release();app.relaunch({args:[...process.argv.slice(1).filter(a=>a!=='--bcc-advanced'),'--bcc-advanced']});app.quit();};
   handle('live:advanced',async()=>{advanced();});
-  Menu.setApplicationMenu(Menu.buildFromTemplate([{label:app.name,submenu:[{role:'about'},{type:'separator'},{role:'quit'}]},{label:'Edit',submenu:[{role:'undo'},{role:'redo'},{type:'separator'},{role:'cut'},{role:'copy'},{role:'paste'},{role:'selectAll'}]},{label:'YouTube',submenu:[{label:'Broadcast manager…',click:()=>{void youtube?.open().catch(e=>dialog.showErrorBox('YouTube manager',youtubeError(e)));}}]},{label:'View',submenu:[{role:'reload'},{role:'togglefullscreen'},{type:'separator'},{label:'Advanced offline rehearsal…',click:advanced}]}]));
+  Menu.setApplicationMenu(Menu.buildFromTemplate([{label:app.name,submenu:[{role:'about'},{type:'separator'},{role:'quit'}]},{label:'Edit',submenu:[{role:'undo'},{role:'redo'},{type:'separator'},{role:'cut'},{role:'copy'},{role:'paste'},{role:'selectAll'}]},{label:'YouTube',submenu:[{label:'Stream Management…',click:()=>{void youtube?.open().catch(e=>dialog.showErrorBox('YouTube manager',youtubeError(e)));}}]},{label:'View',submenu:[{role:'reload'},{role:'togglefullscreen'},{type:'separator'},{label:'Advanced offline rehearsal…',click:advanced}]}]));
   powerMonitor.on('suspend',()=>{youtube?.cancel();live.release('Mac suspended. Pending controls cancelled; no output shutdown was requested.');});
   window=new BrowserWindow({width:1280,height:900,minWidth:1024,minHeight:720,title:'Broadcast Control Center — Live Service Alpha',webPreferences:{preload:path.join(__dirname,'live-preload.cjs'),contextIsolation:true,nodeIntegration:false,sandbox:true}});
   window.webContents.setWindowOpenHandler(()=>({action:'deny'}));window.webContents.on('will-navigate',event=>event.preventDefault());
