@@ -1,0 +1,37 @@
+name: Preview test toolchain (no release)
+on:
+  push:
+    branches: ['preview/stream-management-dmg']
+    paths: ['.github/workflows/preview-test-toolchain.yml']
+permissions: {contents: read}
+jobs:
+  toolchain:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with: {persist-credentials: false}
+      - uses: actions/setup-node@v4
+        with: {node-version: '24'}
+      - name: Resolve the exact app test dependencies (no deployment credentials)
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/validation"
+          cd "$RUNNER_TEMP/validation"
+          node -e 'let p=require(process.env.GITHUB_WORKSPACE+"/apps/control-center/package.json");let dependencies={...p.dependencies,...p.devDependencies};delete dependencies["electron-builder"];require("fs").writeFileSync("package.json",JSON.stringify({private:true,dependencies}));'
+          npm install --no-audit --no-fund
+          tar --exclude=node_modules/electron/dist -czf "$RUNNER_TEMP/modules.tgz" node_modules package-lock.json
+          tar -czf "$RUNNER_TEMP/electron-linux.tgz" node_modules/electron/dist
+      - uses: actions/upload-artifact@v4
+        with:
+          name: preview-test-dependencies
+          path: ${{ runner.temp }}/modules.tgz
+          retention-days: 1
+          compression-level: 0
+      - uses: actions/upload-artifact@v4
+        with:
+          name: preview-test-electron-linux
+          path: ${{ runner.temp }}/electron-linux.tgz
+          retention-days: 1
+          compression-level: 0
