@@ -13,7 +13,7 @@ jobs:
         with: {persist-credentials: false}
       - uses: actions/setup-node@v4
         with: {node-version: '24'}
-      - name: Resolve the exact app test dependencies (no deployment credentials)
+      - name: Resolve pinned application build and test dependencies
         shell: bash
         run: |
           set -euo pipefail
@@ -22,13 +22,18 @@ jobs:
           node -e 'let p=require(process.env.GITHUB_WORKSPACE+"/apps/control-center/package.json");let dependencies={...p.dependencies,...p.devDependencies};delete dependencies["electron-builder"];require("fs").writeFileSync("package.json",JSON.stringify({private:true,dependencies}));'
           npm install --no-audit --no-fund
           tar --exclude=node_modules/electron/dist -czf "$RUNNER_TEMP/modules.tgz" node_modules package-lock.json
-          tar -czf "$RUNNER_TEMP/electron-linux.tgz" node_modules/electron/dist
       - uses: actions/upload-artifact@v4
         with:
           name: preview-test-dependencies
           path: ${{ runner.temp }}/modules.tgz
           retention-days: 1
           compression-level: 0
+      - name: Download and verify the repo-pinned Electron runtime
+        run: |
+          set -euo pipefail
+          cd "$RUNNER_TEMP/validation"
+          ./node_modules/.bin/install-electron
+          tar -czf "$RUNNER_TEMP/electron-linux.tgz" node_modules/electron/dist node_modules/electron/path.txt
       - uses: actions/upload-artifact@v4
         with:
           name: preview-test-electron-linux
