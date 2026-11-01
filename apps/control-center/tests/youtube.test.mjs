@@ -9,7 +9,7 @@ const clone=x=>JSON.parse(JSON.stringify(x));
 const draft=()=>({serviceId:'service-one',channelId:'UC_SYNTHETIC',title:'20300106 - Gottesdienst',description:'Synthetic service only',startsAt:'2030-01-06T10:00:00.000Z',privacy:'private',madeForKids:false});
 async function rig(){
   const calls=[],events=new Map(),channel={id:'UC_SYNTHETIC',title:'Synthetic channel'},ingest={id:'INGEST_ONE',channelId:channel.id,key:'INVENTED_INGEST_KEY',status:'ready',reusable:true,health:'good'};
-  const destination={server:'rtmps://a.rtmp.youtube.com/live2',key:ingest.key};
+  const destination={server:'rtmps://a.rtmps.youtube.com/live2',key:ingest.key};
   const obs={connected:true,streaming:false,reconnecting:false,program:'Main',muted:false,intro:'Intro',outro:'Outro',permissionsReady:true};
   let saved=blankYouTubeState(),ticket=0,failSave=false,unknownCreate=false,noIngest=false,cancelAfterStart=false,controller;
   const store={async load(){return clone(saved);},async save(s){if(failSave)throw new YouTubeFailure('Synthetic disk failure');saved=clone(s);}};
@@ -38,7 +38,7 @@ test('YouTube draft requires explicit visibility and audience, and rejects secre
   assert.throws(()=>parseCommand({kind:'start',serviceId:'service-one',url:'https://example.invalid'}));
 });
 test('YouTube endpoints and watch links cannot be replaced by renderer-supplied URLs',()=>{
-  assert.equal(youtubeServer('rtmps://a.rtmp.youtube.com/live2'),'rtmps://a.rtmp.youtube.com/live2');
+  assert.equal(youtubeServer('rtmps://a.rtmps.youtube.com/live2'),'rtmps://a.rtmps.youtube.com/live2');
   for(const u of ['https://a.rtmp.youtube.com/live2','rtmp://youtube.com.evil.invalid/live2','rtmp://a.rtmp.youtube.com/live2?secret=x','auto','rtmp://user:pass@a.rtmp.youtube.com/live2'])assert.throws(()=>youtubeServer(u));
   assert.equal(watchUrl('TEST_ID'),'https://www.youtube.com/watch?v=TEST_ID');assert.throws(()=>watchUrl('../redirect'));
 });
@@ -124,7 +124,7 @@ test('association persistence rejects injected credentials and encrypted store r
 });
 test('secret-bearing OBS read is not exposed through the generic read allowlist',async()=>{const peer=new LiveObs();await assert.rejects(peer.read('GetStreamServiceSettings'),/Unsupported read/);});
 test('verified OBS start guard detects a key change immediately before transmission',async()=>{
-  const peer=new LiveObs(),writes=[],expected={server:'rtmps://a.rtmp.youtube.com/live2',key:'EXPECTED_KEY'};
+  const peer=new LiveObs(),writes=[],expected={server:'rtmps://a.rtmps.youtube.com/live2',key:'EXPECTED_KEY'};
   peer.request=async(name)=>{if(name==='GetStreamServiceSettings')return {streamServiceType:'rtmp_common',streamServiceSettings:{server:expected.server,key:'OTHER_KEY'}};writes.push(name);return {};};
   await assert.rejects(peer.withYouTubeDestination(expected,()=>peer.change('StartStream')),/destination changed/);assert.deepEqual(writes,[]);
 });

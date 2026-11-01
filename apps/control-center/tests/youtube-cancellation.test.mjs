@@ -9,7 +9,7 @@ test('YouTube cancellation during token refresh prevents a later lifecycle mutat
   await waiting;allowed=false;resolveToken('INVENTED_TOKEN');await assert.rejects(action,/Cancelled before send/);assert.equal(calls,0);
 });
 test('release during the final secret-bearing OBS read prevents a later StartStream',async()=>{
-  const peer=new LiveObs(),expected={server:'rtmps://a.rtmp.youtube.com/live2',key:'INVENTED_KEY'},writes=[];
+  const peer=new LiveObs(),expected={server:'rtmps://a.rtmps.youtube.com/live2',key:'INVENTED_KEY'},writes=[];
   let resolveRead,started,valid=true;const waiting=new Promise(r=>{started=r;});
   peer.request=async name=>{
     if(name==='GetStreamServiceSettings'){started();await new Promise(r=>{resolveRead=r;});return {streamServiceType:'rtmp_common',streamServiceSettings:expected};}

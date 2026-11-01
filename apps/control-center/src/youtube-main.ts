@@ -87,7 +87,7 @@ export class YouTubeManager {
       if(output)await d.exclusive(execute);else await execute();return this.panel();
     });
     handle('youtube:open',async value=>{await shell.openExternal(watchUrl(this.knownBroadcast(value)));});
-    handle('youtube:copy-link',async value=>{clipboard.writeText(watchUrl(this.knownBroadcast(value)));});
+    handle('youtube:copy-link',async value=>{await clipboard.writeText(watchUrl(this.knownBroadcast(value)));});
   }
   private obsCommand(command:'start'|'stop',destination:Destination):Promise<void>{
     const before=this.d.live.ticket();
