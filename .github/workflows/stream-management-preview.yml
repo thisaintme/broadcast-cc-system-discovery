@@ -2,9 +2,9 @@ name: Stream Management — tested Mac preview only
 on:
   push:
     branches: ['preview/stream-management-dmg']
+    paths: ['broadcast-cc-stream-management-implementation.zip', '.github/workflows/stream-management-preview.yml', 'apps/control-center/**', 'preview/**']
   workflow_dispatch:
-permissions:
-  contents: read
+permissions: {contents: read}
 concurrency:
   group: bcc-stream-management-preview
   cancel-in-progress: true
@@ -21,44 +21,33 @@ jobs:
         with: {persist-credentials: false}
       - uses: actions/setup-node@v4
         with: {node-version: '24'}
-      - name: Prepare approved preview inputs
-        id: inputs
+      - name: Apply reviewed sources and corrections
+        id: input
         shell: bash
         run: |
           set -euo pipefail
-          if [[ -f "$ARCHIVE" ]]; then
-            echo "$SOURCE_SHA256  $ARCHIVE" | shasum -a 256 -c -
-            unzip -q "$ARCHIVE" -d "$RUNNER_TEMP/input"
-            patch="$RUNNER_TEMP/input/stream-management-patch"
-            node --test "$patch/validation/apply-package.test.mjs"
-            node "$patch/apply-stream-management.mjs" "$GITHUB_WORKSPACE" --apply
-            test -s apps/control-center/src/stream-management-main.ts
-            test -s apps/control-center/tests/stream-management.test.mjs
-            echo 'complete=true' >> "$GITHUB_OUTPUT"
-          else
+          if [[ ! -f "$ARCHIVE" ]]; then
             echo 'complete=false' >> "$GITHUB_OUTPUT"
-            echo 'Baseline validation only: the reviewed source ZIP has not landed. No installer will be packaged.' >> "$GITHUB_STEP_SUMMARY"
+            echo 'Baseline check only. The exact Stream Management ZIP is not present. No DMG will be produced.' >> "$GITHUB_STEP_SUMMARY"
+            exit 0
           fi
-      - name: Snapshot exact sources for reproducible local validation
-        run: tar -czf "$RUNNER_TEMP/preview-source.tgz" apps/control-center
-      - uses: actions/upload-artifact@v4
-        with:
-          name: preview-validation-source
-          path: ${{ runner.temp }}/preview-source.tgz
-          retention-days: 7
+          echo "$SOURCE_SHA256  $ARCHIVE" | shasum -a 256 -c -
+          unzip -q "$ARCHIVE" -d "$RUNNER_TEMP/input"
+          patch="$RUNNER_TEMP/input/stream-management-patch"
+          node --test "$patch/validation/apply-package.test.mjs"
+          node "$patch/apply-stream-management.mjs" "$GITHUB_WORKSPACE" --apply
+          git apply --check preview/stream-management-electron44.patch
+          git apply preview/stream-management-electron44.patch
+          test "$(git hash-object apps/control-center/src/stream-management-main.ts)" = 4bb6256989f93a4dd01cd908995c83963fb56ec7 || test "$(git hash-object apps/control-center/src/stream-management-main.ts | cut -c1-7)" = 4bb6256
+          test -s apps/control-center/tests/stream-management.test.mjs
+          echo 'complete=true' >> "$GITHUB_OUTPUT"
       - name: Install dependencies
         working-directory: apps/control-center
         run: npm install --no-fund --no-audit
-      - name: Typecheck integrated app
+      - name: Typecheck, run regression tests and build the Electron app
         working-directory: apps/control-center
-        run: npm run typecheck
-      - name: Application regression suite
-        working-directory: apps/control-center
-        run: npm test
-      - name: Build Electron application
-        working-directory: apps/control-center
-        run: npm run build
-      - name: Existing native Electron smoke tests
+        run: npm run typecheck && npm test && npm run build
+      - name: Eight existing macOS Electron smoke tests
         working-directory: apps/control-center
         shell: bash
         run: |
@@ -66,33 +55,39 @@ jobs:
           for suite in smoke smoke-obs smoke-offline smoke-audio smoke-service-audio smoke-readiness smoke-live smoke-operator; do
             ./node_modules/.bin/electron scripts/run-smoke.cjs "$suite.cjs"
           done
-      - name: Stream Management renderer, account view and recurrence IPC smoke test
-        if: steps.inputs.outputs.complete == 'true'
+      - name: Test Stream Management menu, IPC, account view and recurrence in Electron
+        if: steps.input.outputs.complete == 'true'
         working-directory: apps/control-center
         run: ./node_modules/.bin/electron scripts/smoke-stream-management.cjs
-      - name: Package and verify the preview (no publishing)
-        if: steps.inputs.outputs.complete == 'true'
+      - name: Build universal Mac preview (not a release)
+        if: steps.input.outputs.complete == 'true'
+        working-directory: apps/control-center
+        run: |
+          npm pkg set 'version=0.3.0-alpha.3'
+          npm run dist:mac
+      - name: Mount disk image and verify version, application payload and both CPU architectures
+        if: steps.input.outputs.complete == 'true'
         working-directory: apps/control-center
         shell: bash
         run: |
           set -euo pipefail
-          npm pkg set 'version=0.3.0-alpha.3'
-          npm run dist:mac
-          dmg=(release/*.dmg)
-          test "${#dmg[@]}" -eq 1 && test -s "${dmg[0]}"
+          dmg=(release/*.dmg); test "${#dmg[@]}" -eq 1 && test -s "${dmg[0]}"
           hdiutil verify "${dmg[0]}"
           mount="$RUNNER_TEMP/dmg-review"; mkdir "$mount"
           hdiutil attach -readonly -nobrowse -mountpoint "$mount" "${dmg[0]}"
           trap 'hdiutil detach "$mount"' EXIT
           apps=("$mount"/*.app); test "${#apps[@]}" -eq 1
-          exe=$(/usr/libexec/PlistBuddy -c 'Print CFBundleExecutable' "${apps[0]}/Contents/Info.plist")
+          plist="${apps[0]}/Contents/Info.plist"
+          exe=$(/usr/libexec/PlistBuddy -c 'Print CFBundleExecutable' "$plist")
           lipo -verify_arch x86_64 arm64 "${apps[0]}/Contents/MacOS/$exe"
-          ./node_modules/.bin/asar list "${apps[0]}/Contents/Resources/app.asar" > "$RUNNER_TEMP/contents.txt"
-          for file in /dist/stream-management-preload.cjs /dist/renderer/stream-management.html /dist/renderer/stream-management-renderer.js; do grep -Fxq "$file" "$RUNNER_TEMP/contents.txt"; done
+          asar="${apps[0]}/Contents/Resources/app.asar"
+          ./node_modules/.bin/asar extract "$asar" "$RUNNER_TEMP/packed"
+          test "$(node -p 'require(process.argv[1]).version' "$RUNNER_TEMP/packed/package.json")" = 0.3.0-alpha.3
+          for f in live-main.cjs stream-management-preload.cjs renderer/stream-management.html renderer/stream-management-renderer.js; do cmp "dist/$f" "$RUNNER_TEMP/packed/dist/$f"; done
           (cd release && shasum -a 256 *.dmg > SHA256SUMS.txt)
           printf 'commit=%s\nsource_zip_sha256=%s\n' "$GITHUB_SHA" "$SOURCE_SHA256" > release/BUILD.txt
       - uses: actions/upload-artifact@v4
-        if: success() && steps.inputs.outputs.complete == 'true'
+        if: success() && steps.input.outputs.complete == 'true'
         with:
           name: Stream-Management-Preview-macOS-universal
           path: |
