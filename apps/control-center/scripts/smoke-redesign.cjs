@@ -36,7 +36,7 @@ async function finish(code,e){if(finished)return;finished=true;clearTimeout(time
    await wait('window.streamManagement.panel().then(p=>p.ready&&!p.busy)');
    const year=new Date().getUTCFullYear()+1;
    const series={id:'native-service',name:'Gottesdienst',kind:'service',anchorDate:year+'-01-01',time:'11:00',timeZone:'Europe/Berlin',weekdays:[7],intervalWeeks:1,excludeDates:[],destinations:[{language:'de',title:{mode:'dated',text:'Gottesdienst'},description:'',privacy:'private',madeForKids:false}]};
-   const reply=await ev(`window.streamManagement.action(${JSON.stringify({kind:'series-save',series})})`);assert.equal(reply.error,'');
+   const reply=await ev(`window.streamManagement.action(${JSON.stringify({kind:'series-save',series})})`);assert.equal(reply.panel.error,'');assert.equal(reply.panel.state.series.some(s=>s.id===series.id),true);
    const range={requestId:'native-preview',seriesId:series.id,from:year+'-01-01',until:year+'-01-31'};
    const preview=await ev(`window.streamManagement.seriesPreview(${JSON.stringify(range)})`);assert.ok(preview.newCount>=4&&preview.newCount<=5);assert.equal(await ev(`window.streamManagement.panel().then(p=>p.state.occurrences.length)`),0);
    await ev(`document.getElementById('nav-setup').click()`);await wait(`!!document.getElementById('connect-saved-obs')`);
