@@ -1,3 +1,4 @@
+import {completeReviewedEvent} from './remote-end.ts';
 import { BrowserWindow, clipboard, dialog, ipcMain, safeStorage, shell } from 'electron';
 import type { IpcMainInvokeEvent } from 'electron';
 import { readFile, stat } from 'node:fs/promises';
@@ -29,6 +30,11 @@ export class StreamManagementWindow {
     private opening: Promise<void> | null = null;
     private generation = 0;
     private ready = false;
+    private initializing:Promise<void>|null=null;
+    private observing=false;
+    private actionParent:BrowserWindow|null=null;
+    private checkedAt:Partial<Record<Language,number|null>>={};
+    private connectionErrors:Partial<Record<Language,string>>={};
     private working = false;
     private error = '';
     private notice = 'Scheduling does not start OBS or Web Presenter. All times use Europe/Berlin.';
@@ -48,10 +54,13 @@ export class StreamManagementWindow {
         this.setup = new AccountSetup(this.accounts, {de:secret('pending-stream-key-de.enc'),ru:secret('pending-stream-key-ru.enc')});
         this.service = new StreamManagementService(new StreamManagementFile(path.join(d.directory, 'stream-management.json')), this.accounts, () => this.emit());
         const sender = (event: IpcMainInvokeEvent) => {
-            if (!this.window || event.sender !== this.window.webContents || event.senderFrame !== this.window.webContents.mainFrame || event.senderFrame?.url !== 'bcc://app/stream-management.html')
-                throw new Error('Untrusted Stream Management request.');
+            const parent=this.d.parent();
+            const own=!!this.window&&!this.window.isDestroyed()&&event.sender===this.window.webContents&&event.senderFrame===this.window.webContents.mainFrame&&event.senderFrame?.url==='bcc://app/stream-management.html';
+            const desk=!!parent&&!parent.isDestroyed()&&event.sender===parent.webContents&&event.senderFrame===parent.webContents.mainFrame&&event.senderFrame?.url==='bcc://app/live.html';
+            if(!own&&!desk)throw new Error('Untrusted Stream Management request.');
         };
-        ipcMain.handle('stream-management:panel', event => { sender(event); return this.panel(); });
+        ipcMain.handle('stream-management:panel', async event => { sender(event); await this.initialize(); return this.panel(); });
+        ipcMain.handle('stream-management:series-preview',(event,raw)=>{sender(event);if(!this.ready)throw new Error('Lokale Planung ist noch nicht bereit.');try{return this.service.seriesPreview(raw);}catch(e){throw new Error(message(e));}});
         ipcMain.handle('stream-management:preview', (event, raw) => { sender(event); try {
             return this.service.preview(raw).dates;
         }
@@ -61,8 +70,9 @@ export class StreamManagementWindow {
         ipcMain.handle('stream-management:cancel', event => { sender(event); this.cancel(); });
         ipcMain.handle('stream-management:action', async (event, raw): Promise<ManagementReply> => {
             sender(event);
-            if (!this.ready || this.working || d.externalBusy())
+            if (!this.ready || this.working || this.observing || d.externalBusy())
                 throw new Error('Wait for the current operation to finish or cancel it. Reopen this window if local data could not be loaded.');
+            this.actionParent=BrowserWindow.fromWebContents(event.sender);
             this.working = true;
             this.error = '';
             this.emit();
@@ -76,16 +86,16 @@ export class StreamManagementWindow {
                 this.error = e instanceof YouTubeFailure ? e.message : message(e);
             }
             finally {
-                this.working = false;
+                this.working = false;this.actionParent=null;
                 this.emit();
             }
             return { panel: this.panel(), ...(profiles ? { profiles } : {}) };
         });
     }
-    get busy(): boolean { return this.working; }
-    panel(): ManagementPanel { return { state: this.service.snapshot(), accounts: this.accounts.views().map(a=>({...a,keyPending:this.setup.hasPending(a.language)})), busy: this.working, ready: this.ready, error: this.error, notice: this.notice, remote: structuredClone(this.remote) }; }
+    get busy(): boolean { return this.working || this.observing; }
+    panel(): ManagementPanel { return { state: this.service.snapshot(), accounts: this.accounts.views().map(a=>({...a,keyPending:this.setup.hasPending(a.language)})), busy: this.busy, ready: this.ready, error: this.error, notice: this.notice, remote: structuredClone(this.remote),checkedAt:{...this.checkedAt},connectionErrors:{...this.connectionErrors} }; }
     emit(): void { if (this.window && !this.window.isDestroyed())
-        this.window.webContents.send('stream-management:state', this.panel()); }
+        this.window.webContents.send('stream-management:state', this.panel()); const parent=this.d.parent();if(parent&&!parent.isDestroyed())parent.webContents.send('stream-management:state',this.panel()); }
     cancel(): void { this.generation++; this.service.cancel(); if (this.working) {this.accounts.cancel(); this.notice = 'Pending follow-up cancelled. Completed remote changes remain. No encoder was stopped.';} this.emit(); }
     close(): void { this.cancel(); this.window?.close(); }
     async open(): Promise<void> {
@@ -105,20 +115,38 @@ export class StreamManagementWindow {
             this.opening = null;
         }
     }
+    async initialize():Promise<void>{
+        if(this.ready)return;if(this.initializing)return this.initializing;
+        this.initializing=(async()=>{try{await this.accounts.load();await this.setup.load();await this.service.load();this.ready=true;this.error='';}
+          catch(e){this.error=e instanceof YouTubeFailure?e.message:message(e);}finally{this.emit();}})();
+        try{await this.initializing;}finally{this.initializing=null;}
+    }
+    async observe():Promise<void>{
+        if(!this.ready||this.working||this.observing||this.d.externalBusy())return;
+        this.observing=true;
+        try{for(const a of this.accounts.views()){
+            if(!a.channel){delete this.remote[a.language];this.checkedAt[a.language]=null;continue;}
+            try{this.remote[a.language]=await this.service.refresh(a.language);this.checkedAt[a.language]=Date.now();delete this.connectionErrors[a.language];}
+            catch{this.checkedAt[a.language]=null;this.connectionErrors[a.language]='YouTube-Status konnte nicht bestätigt werden. Verbindung in Einstellungen prüfen.';}
+        }}finally{this.observing=false;this.emit();}
+    }
+    async reviewRussianEnd(serviceId:string):Promise<RemoteBroadcast>{
+        const occurrence=this.service.snapshot().occurrences.find(o=>`stream_${o.id}`===serviceId),target=occurrence?.targets.find(t=>t.language==='ru');
+        if(!target?.broadcastId||target.stage!=='ready')throw new ManagementError('target','Kein bestätigtes russisches Event für diese Sendung.');
+        const api=await this.accounts.authorized('ru',target.channelId),b=await api.broadcast(target.broadcastId);
+        if(!b||b.channelId!==target.channelId||b.id!==target.broadcastId||!['live','complete'].includes(b.lifecycle))throw new ManagementError('target','Das zugeordnete russische Event ist nicht live oder bereits beendet.');
+        return b;
+    }
+    async completeRussian(serviceId:string,reviewed:RemoteBroadcast,valid:()=>void):Promise<void>{
+        const epoch=this.generation,guard=()=>{valid();if(epoch!==this.generation)throw new ManagementError('cancelled','Abschluss abgebrochen.');};
+        const current=await this.reviewRussianEnd(serviceId);guard();
+        if(current.id!==reviewed.id||current.channelId!==reviewed.channelId)throw new ManagementError('changed','Russisches Ziel hat sich geändert.');
+        const api=await this.accounts.authorized('ru',reviewed.channelId);guard();
+        await completeReviewedEvent(api,reviewed,guard);guard();this.checkedAt.ru=null;
+    }
+    private owner():BrowserWindow{const w=this.actionParent||this.window||this.d.parent();if(!w||w.isDestroyed())throw new ManagementError('cancelled','Fenster wurde geschlossen.');return w;}
     private async openWindow(): Promise<void> {
-        if (!this.ready)
-            try {
-                await this.accounts.load();
-                await this.setup.load();
-                await this.service.load();
-                this.ready = true;
-                this.error = '';
-            }
-            catch (e) {
-                if (e instanceof PersistenceError)
-                    this.ready = false;
-                this.error = e instanceof YouTubeFailure ? e.message : message(e);
-            }
+        await this.initialize();
         this.window = new BrowserWindow({ width: 1260, height: 900, minWidth: 940, minHeight: 700, title: 'Broadcast Control Center — Stream Management', parent: this.d.parent() || undefined, webPreferences: { preload: path.join(__dirname, 'stream-management-preload.cjs'), contextIsolation: true, nodeIntegration: false, sandbox: true } });
         this.window.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
         this.window.webContents.on('will-navigate', event => event.preventDefault());
@@ -129,8 +157,8 @@ export class StreamManagementWindow {
     }
     private async confirm(title: string, detail: string, button = 'Confirm'): Promise<boolean> {
         const generation = this.generation;
-        const result = await dialog.showMessageBox(this.window!, { type: 'warning', message: title, detail, buttons: ['Cancel', button], defaultId: 0, cancelId: 0 });
-        return result.response === 1 && generation === this.generation && !!this.window && !this.window.isDestroyed();
+        const result = await dialog.showMessageBox(this.owner(), { type: 'warning', message: title, detail, buttons: ['Cancel', button], defaultId: 0, cancelId: 0 });
+        return result.response === 1 && generation === this.generation && !this.owner().isDestroyed();
     }
     private known(lang: Language, broadcastId: string): string {
         const channelId = this.accounts.views().find(a => a.language === lang)?.channel?.id;
@@ -142,7 +170,7 @@ export class StreamManagementWindow {
     private async action(raw: unknown): Promise<Profile[] | undefined> {
         // Keep secret-bearing inputs out of all generic review and error formatting.
         const kind = object(raw).kind, epoch = this.generation;
-        const guard = () => { if (epoch !== this.generation || !this.window || this.window.isDestroyed()) throw new ManagementError('cancelled','Setup cancelled.'); };
+        const guard = () => { if (epoch !== this.generation || this.owner().isDestroyed()) throw new ManagementError('cancelled','Setup cancelled.'); };
         if (kind === 'stage-key' || kind === 'verify-key' || kind === 'discard-key') {
             const body = only(raw, kind === 'stage-key' ? ['kind','language','key'] : ['kind','language']);
             const lang = language(body.language), label = lang === 'de' ? 'German · OBS' : 'Russian · Web Presenter';
@@ -163,7 +191,7 @@ export class StreamManagementWindow {
             const body=only(raw,kind==='setup-client'?['kind','clientId','clientSecret']:['kind']);
             let config:unknown;
             if(kind==='setup-client-file') {
-                const pick=await dialog.showOpenDialog(this.window!,{title:'Choose Google Desktop app credentials from this Mac',properties:['openFile'],filters:[{name:'Google Desktop app JSON',extensions:['json']}]});
+                const pick=await dialog.showOpenDialog(this.owner(),{title:'Choose Google Desktop app credentials from this Mac',properties:['openFile'],filters:[{name:'Google Desktop app JSON',extensions:['json']}]});
                 if(pick.canceled)return;guard();
                 if((await stat(pick.filePaths[0])).size>65536)throw new ManagementError('file','Choose a Desktop client JSON under 64 KiB.');
                 try{config=JSON.parse(await readFile(pick.filePaths[0],'utf8'));}catch{throw new ManagementError('file','This is not a readable Desktop client JSON.');}
@@ -173,6 +201,17 @@ export class StreamManagementWindow {
                 await this.setup.configureSignIn(config,guard); this.notice='Google sign-in setup saved. Choose Connect YouTube on the destination you want to link.';
             }
             return;
+        }
+        if(kind==='series-save') {
+            const body=only(raw,['kind','series']);await this.service.saveSeries(body.series);this.notice='Sendereihe gespeichert. Bestehende Termine und YouTube bleiben unverändert.';return;
+        }
+        if(kind==='series-generate') {
+            const body=only(raw,['kind','range']),preview=this.service.seriesPreview(body.range);
+            if(!preview.newCount){this.notice='Keine neuen Termine. Bereits erzeugte oder vergangene Termine werden übersprungen.';return;}
+            const detail=`${preview.series.name} · Europe/Berlin\n${preview.dates.filter(d=>d.disposition==='new').map(d=>`${d.date} ${d.time}`).join('\n')}\n\n${preview.series.destinations.map(d=>`${d.language.toUpperCase()}: ${d.title.text} · ${d.privacy} · Für Kinder: ${d.madeForKids?'Ja':'Nein'}`).join('\n')}\n\n${preview.existingCount} vorhandene und ${preview.pastCount} vergangene Termine werden übersprungen. Es wird kein Encoder gestartet.`;
+            if(await this.confirm(`${preview.newCount*preview.series.destinations.length} YouTube-Termine erstellen?`,detail,'Termine erstellen')) {
+                const result=await this.service.generateSeries(body.range);this.notice=`${result.filter(r=>r.stage==='ready').length} Ziele bestätigt. Ergebnisse je Termin prüfen; unklare Ergebnisse werden nicht automatisch wiederholt.`;
+            }return;
         }
         const r = only(raw, ['kind', 'plan', 'draft', 'edit', 'occurrenceId', 'scope', 'language', 'broadcastId', 'profileId', 'madeForKids', 'template', 'germanOnly']);
         const lang = r.language !== undefined ? language(r.language) : undefined;
@@ -211,7 +250,7 @@ export class StreamManagementWindow {
             this.notice = 'Only this failed or pending destination was retried.';
         }
         else if (r.kind === 'refresh') {
-            this.remote[needLang()] = await this.service.refresh(needLang());
+            this.remote[needLang()] = await this.service.refresh(needLang());this.checkedAt[needLang()]=Date.now();delete this.connectionErrors[needLang()];
             this.notice = `${needLang().toUpperCase()} refreshed from YouTube. External events are not adopted automatically.`;
         }
         else if (r.kind === 'recover') {
@@ -232,7 +271,7 @@ export class StreamManagementWindow {
         }
         else if (r.kind === 'configure') {
             const generation = this.generation;
-            const pick = await dialog.showOpenDialog(this.window!, { title: `Import ${needLang().toUpperCase()} Google Desktop OAuth client`, properties: ['openFile'], filters: [{ name: 'JSON', extensions: ['json'] }] });
+            const pick = await dialog.showOpenDialog(this.owner(), { title: `Import ${needLang().toUpperCase()} Google Desktop OAuth client`, properties: ['openFile'], filters: [{ name: 'JSON', extensions: ['json'] }] });
             if (!pick.canceled && generation === this.generation) {
                 if ((await stat(pick.filePaths[0])).size > 64 * 1024)
                     throw new ManagementError('file', 'OAuth client files must be smaller than 64 KiB.');
@@ -250,14 +289,14 @@ export class StreamManagementWindow {
         }
         else if (r.kind === 'connect') {
             await this.accounts.connect(needLang());
-            delete this.remote[needLang()];
+            delete this.remote[needLang()];this.checkedAt[needLang()]=null;
             this.notice = 'Account connected. Verify the channel name and select its reusable streaming profile.';
         }
         else if (r.kind === 'disconnect') {
             if (await this.confirm('Remove this account connection from this Mac?', `${needLang().toUpperCase()} • Local authorization and saved profile will be removed. Existing YouTube events and equipment settings stay unchanged. Google permission revocation is separate.`, 'Disconnect locally')) {
                 await this.accounts.disconnect(needLang());
                 await this.setup.discard(needLang());
-                delete this.remote[needLang()];
+                delete this.remote[needLang()];this.checkedAt[needLang()]=null;
             }
         }
         else if (r.kind === 'profiles')
@@ -274,7 +313,7 @@ export class StreamManagementWindow {
             if (await this.confirm(r.kind === 'reveal-key' ? 'Reveal the stream key?' : r.kind === 'copy-key' ? 'Copy the stream key to the clipboard?' : 'Copy the ingestion server?', 'Anyone with a stream key can send video to that stream. Clipboard contents may be accessible to other apps. Do not include credentials in screenshots or support reports.')) {
                 const p = await this.accounts.savedProfile(needLang());
                 if (r.kind === 'reveal-key')
-                    await dialog.showMessageBox(this.window!, { type: 'info', message: 'Stream key — sensitive', detail: p.key, buttons: ['Close'], defaultId: 0 });
+                    await dialog.showMessageBox(this.owner(), { type: 'info', message: 'Stream key — sensitive', detail: p.key, buttons: ['Close'], defaultId: 0 });
                 else {
                     const value = r.kind === 'copy-key' ? p.key : p.server;
                     await clipboard.writeText(value);

@@ -2,6 +2,7 @@
 import type {AudioObservation,AudioSnapshot} from './audio-model.ts';
 import type {ServiceAudioIntent,ServiceAudioStatus} from './service-audio.ts';
 export const ROLES = ['intro', 'main', 'speaker', 'bible', 'outro'] as const;
+export const DESK_ROLES = ['intro', 'main', 'speaker', 'bible', 'prayer', 'outro'] as const;
 export type Role = typeof ROLES[number];
 export type Phase = 'idle' | 'prepared' | Role;
 export type Mode = 'simulation' | 'obs-preview' | 'offline-program';
@@ -15,7 +16,7 @@ export interface Inventory {
 }
 export interface Connection { label:string; module:string; version:string; host:string; port?:number; enabled:boolean; health:'unknown' }
 export interface Bindings {
-  scenes:Record<Role,string>; speakerText:string; bibleText:string;
+  scenes:Record<Role,string>&{prayer?:string}; speakerText:string; bibleText:string;
   nextServiceText:string; audioInput:string; confirmed:boolean;
 }
 export interface CaptionBindings {
@@ -46,7 +47,7 @@ export interface RuntimeState {
 }
 export interface Snapshot { version:string; workspace:Workspace; runtime:RuntimeState; transport:TransportState; companionResult:string;serviceAudio?:ServiceAudioStatus }
 export interface SourceCandidate {name:string;path:string;enabled:boolean}
-export const blankBindings=():Bindings=>({scenes:{intro:'',main:'',speaker:'',bible:'',outro:''},speakerText:'',bibleText:'',nextServiceText:'',audioInput:'',confirmed:false});
+export const blankBindings=():Bindings=>({scenes:{intro:'',main:'',speaker:'',bible:'',prayer:'',outro:''},speakerText:'',bibleText:'',nextServiceText:'',audioInput:'',confirmed:false});
 export const blankWorkspace=():Workspace=>({
   format:'broadcast-cc-workspace',version:1,obsUrl:'ws://127.0.0.1:4455',companionUrl:'http://127.0.0.1:8000',
   inventory:null,connections:[],bindings:blankBindings(),captions:blankCaptions(),services:[],speakers:[],

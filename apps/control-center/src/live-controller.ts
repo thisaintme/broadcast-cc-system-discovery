@@ -162,7 +162,7 @@ export class LiveController{
     this.phase=this.infer(this.observed.program);this.lastError='';this.notice='Live control enabled. Current OBS state adopted without changing the broadcast.';this.emit();
   }
   selectService(id:string):void{if(this.working)throw new LiveFailure('An action is still in progress.');if(!this.workspace().services.some(s=>s.id===id))throw new LiveFailure('Select a scheduled service.');this.cancelReturn();this.selected=id;this.notice='Service selected locally. OBS and YouTube were not changed.';this.emit();}
-  adoptPhase(phase:LivePhase):void{if(this.working||!['unknown','intro','main','speaker','bible','outro'].includes(phase))throw new LiveFailure('Choose the current service phase.');this.cancelReturn();this.phase=phase;this.notice='Phase recorded only. No scene, audio or stream command was sent.';this.emit();}
+  adoptPhase(phase:LivePhase):void{if(this.working||!['unknown','intro','main','speaker','bible','prayer','outro'].includes(phase))throw new LiveFailure('Choose the current service phase.');this.cancelReturn();this.phase=phase;this.notice='Phase recorded only. No scene, audio or stream command was sent.';this.emit();}
   private async read(name:LiveRead,data:Record<string,unknown>,valid:()=>boolean):Promise<Record<string,any>>{
     if(!valid())throw new LiveFailure('Action cancelled.');const r=await this.port.read(name,data);if(!valid())throw new LiveFailure('Action interrupted.');return r;
   }
@@ -225,9 +225,9 @@ export class LiveController{
       const phase=operator?await executeOperatorAction(context,operator):await executeLiveAction(context,command,value);
       await check();await this.record(command,'completed','Requested action completed and read back.');
       if(!valid())throw new LiveFailure('Action was interrupted.');if(phase)this.phase=phase;else if(operator)this.phase=this.infer(this.observed.program);
-      if(command==='speaker'||command==='bible'){
-        const expectedScene=w.bindings.scenes[command];this.returnAt=this.clock.now()+10000;
-        this.timer=this.clock.set(()=>{void this.returnMain(token,expectedScene);},10000);
+      if(command==='speaker'||command==='bible'||command==='prayer'){
+        const expectedScene=w.bindings.scenes[command]!;this.returnAt=this.clock.now()+15000;
+        this.timer=this.clock.set(()=>{void this.returnMain(token,expectedScene);},15000);
       }
       this.notice=command==='prepare'?'Preflight completed without changing OBS. Each feature has its own readiness check.':'Action confirmed by OBS. No automatic retry or rollback is scheduled.';
     }catch(error){

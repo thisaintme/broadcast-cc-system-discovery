@@ -24,7 +24,7 @@ async function finish(code,error){if(finished)return;finished=true;clearTimeout(
    await evaluate("document.getElementById('open-speaker-panel').focus()");await click('open-speaker-panel');
    await evaluate("document.querySelector('.bcc-cue-panel').dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true}))");
    await wait("!document.getElementById('live-speaker-select')");assert.equal(await evaluate('document.activeElement.id'),'open-speaker-panel');
-   await click('open-speaker-panel');await field('live-speaker-select','Speaker B',true);await click('live-speaker');await wait("window.liveService.snapshot().then(s=>s.returnAt!==null&&!s.busy)");
+   await click('open-speaker-panel');await field('live-speaker-select','Speaker B',true);await click('save-speaker-selection');await click('live-speaker');await wait("window.liveService.snapshot().then(s=>s.returnAt!==null&&!s.busy)");
    await click('nav-schedule');assert.equal(await evaluate("!!document.getElementById('cancel-live-return')"),true);await click('cancel-live-return');await wait("window.liveService.snapshot().then(s=>s.returnAt===null)");
    await click('nav-live');await click('release-live');assert.equal(peer.state.streaming,true);
    for(const width of [1440,1200,1024,768,540]){

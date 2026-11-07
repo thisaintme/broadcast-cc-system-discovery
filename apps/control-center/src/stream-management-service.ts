@@ -1,3 +1,4 @@
+import { parseSeries, previewSeries } from './broadcast-series.ts';
 import { createHash, randomUUID } from 'node:crypto';
 import { ACTIVE, UPCOMING, ManagementError, PersistenceError, RemoteError, emptyState, eventTitle, message, id, language, only, scope as parseScope, parseDestinations, text } from './stream-management-model.ts';
 import type { ManagementState, Occurrence, Target, Language, Scope, DestinationDraft, RemoteBroadcast, ActionResult, EditRequest, Template } from './stream-management-model.ts';
@@ -104,6 +105,41 @@ export class StreamManagementService {
         catch (e) {
             await this.failure(occurrenceId, lang, e, 'create');
         }
+    }
+    seriesPreview(raw: unknown) { return previewSeries(this.state, raw, this.now()); }
+    async saveSeries(raw: unknown): Promise<void> {
+        return this.locked(async () => {
+            const value = parseSeries(raw);
+            if (this.state.batches.some(b => b.id === value.id)) throw new ManagementError('series','Use a new identifier for a reusable series.');
+            if (!(this.state.series || []).some(s => s.id === value.id) && (this.state.series || []).length >= 100) throw new ManagementError('limit','At most 100 reusable series can be saved.');
+            await this.commit(s => { s.series = [...(s.series || []).filter(v => v.id !== value.id), value]; });
+        });
+    }
+    async generateSeries(raw: unknown): Promise<ActionResult[]> {
+        return this.locked(async () => {
+            const {series,range,dates} = previewSeries(this.state,raw,this.now());
+            const print=fingerprint({series,range}), previous=this.state.batches.find(b=>b.id===range.requestId);
+            if(previous) {
+                if(previous.fingerprint!==print) throw new ManagementError('duplicate','This request ID belongs to different series settings. Review a new preview.');
+                return this.state.occurrences.filter(o=>o.batchId===previous.id).flatMap(o=>o.targets.map(t=>this.result(o.id,t.language)));
+            }
+            const fresh=dates.filter(d=>d.disposition==='new');
+            if(!fresh.length) return [];
+            if(this.state.occurrences.length+fresh.length>5000) throw new ManagementError('limit','The local management limit has been reached.');
+            const epoch=this.epoch, channels=new Map<Language,string>();
+            for(const d of series.destinations) {
+                const c=this.accounts.views().find(a=>a.language===d.language)?.channel;
+                if(!c) throw new ManagementError('account',`Connect the ${d.language.toUpperCase()} account first.`);
+                await this.accounts.authorized(d.language,c.id); this.guard(epoch); channels.set(d.language,c.id);
+            }
+            // Different series may share a date, but must not duplicate an existing channel/time.
+            if(fresh.some(d=>this.state.occurrences.some(o=>o.startsAt===d.startsAt&&o.targets.some(t=>t.stage!=='deleted'&&[...channels.values()].includes(t.channelId)))))
+                throw new ManagementError('collision','Another managed broadcast already uses one of these channel/start-time slots. Review the conflicting date before generating.');
+            const occurrences:Occurrence[]=fresh.map(d=>({id:randomUUID(),batchId:range.requestId,seriesId:series.id,originalDate:d.date,date:d.date,time:d.time,startsAt:d.startsAt,timeOverride:false,targets:series.destinations.map(target=>({language:target.language,channelId:channels.get(target.language)!,draft:structuredClone(target),broadcastId:'',stage:'pending',error:'',override:false}))}));
+            this.guard(epoch);
+            await this.commit(s=>{s.batches.push({id:range.requestId,fingerprint:print,name:series.name,createdAt:new Date(this.now()).toISOString()});s.occurrences.push(...occurrences);});
+            return this.createRemaining(occurrences.map(o=>o.id),epoch);
+        });
     }
     preview(raw: unknown): ReturnType<typeof parsePlan> { return parsePlan(raw, this.now()); }
     async create(raw: unknown): Promise<ActionResult[]> {

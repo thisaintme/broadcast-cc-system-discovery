@@ -10,7 +10,7 @@ export function enabledPaths(nodes:SceneNode[],root:string,target:string):number
   };return walk(root,[]);
 }
 function activeTrail(name:string,trail:string[]):string[]{return [...trail,name];}
-export async function requireScene(reader:Reader,w:Workspace,role:Role):Promise<string>{
+export async function requireScene(reader:Reader,w:Workspace,role:Role|'prayer'):Promise<string>{
   const name=w.bindings.scenes[role],list=await reader.read('GetSceneList');
   if(!name||!Array.isArray(list.scenes)||!list.scenes.some((s:any)=>s.sceneName===name))throw new LiveFailure(`Map an existing ${role} scene in Connections & mappings.`);
   return name;
@@ -46,7 +46,7 @@ export async function requireAudio(reader:Reader,w:Workspace):Promise<boolean>{
   if(typeof r.inputMuted!=='boolean')throw new LiveFailure('OBS did not report a valid mute state.');return r.inputMuted;
 }
 export const commandPermissions=(c:LiveCommand):LivePermissions=>({
-  scenes:['prepare','intro','start','on-air','main','speaker','bible','outro'].includes(c),
+  scenes:['prepare','intro','start','on-air','main','speaker','bible','prayer','outro'].includes(c),
   audio:['intro','start','on-air','outro','mute','unmute'].includes(c),stream:c==='start'||c==='stop',...(c==='operator'?{operator:true}:{}),
 });
 /** Missing features block their own actions, not unrelated mapped functions. */
@@ -61,9 +61,9 @@ export function blockedActions(w:Workspace,o:LiveObservation,p:LivePermissions,c
     if(need.audio&&!p.audio)reasons.push('Enable Service audio permission.');
     if(need.stream&&!p.stream)reasons.push('Enable OBS start/stop permission.');
     if(need.operator&&!p.operator)reasons.push('Enable OBS operator desk permission on Live Service.');
-    const role:Role|undefined=c==='start'||c==='prepare'?'intro':c==='on-air'?'main':['intro','main','speaker','bible','outro'].includes(c)?c as Role:undefined;
+    const role:Role|'prayer'|undefined=c==='start'||c==='prepare'?'intro':c==='on-air'?'main':['intro','main','speaker','bible','prayer','outro'].includes(c)?c as Role:undefined;
     if(role&&(!w.bindings.scenes[role]||!o.scenes.includes(w.bindings.scenes[role])))reasons.push(`Map the ${role} scene.`);
-    if((c==='speaker'||c==='bible')&&!o.scenes.includes(w.bindings.scenes.main))reasons.push('Map Main for the timed return.');
+    if((c==='speaker'||c==='bible'||c==='prayer')&&!o.scenes.includes(w.bindings.scenes.main))reasons.push('Map Main for the timed return.');
     if(c==='speaker'&&(!w.captions.speakerGroup||!w.captions.speakerPool.length))reasons.push('Review the speaker-name group and pool in setup.');
     if(c==='bible'&&!w.bindings.bibleText)reasons.push('Map the Bible-reference text source.');
     if(c==='outro'&&!w.bindings.nextServiceText)reasons.push('Map the next-service text source.');

@@ -1,3 +1,4 @@
+import type { BroadcastSeries } from './broadcast-series.ts';
 /** Public, serializable stream-management contracts. No credentials belong here. */
 export type Language = 'de' | 'ru';
 export type Privacy = 'public' | 'unlisted' | 'private';
@@ -129,6 +130,7 @@ export interface ManagementState {
     batches: Batch[];
     occurrences: Occurrence[];
     templates: Template[];
+    series?: BroadcastSeries[];
 }
 export interface EditRequest {
     occurrenceId: string;
@@ -143,7 +145,7 @@ export interface ActionResult {
     stage: TargetStage;
     message: string;
 }
-export const emptyState = (): ManagementState => ({ version: 1, batches: [], occurrences: [], templates: [] });
+export const emptyState = (): ManagementState => ({ version: 1, batches: [], occurrences: [], templates: [], series: [] });
 export const LANGUAGES: Language[] = ['de', 'ru'];
 export const UPCOMING = new Set(['created', 'ready']);
 export const ACTIVE = new Set(['testing', 'testStarting', 'live', 'liveStarting']);

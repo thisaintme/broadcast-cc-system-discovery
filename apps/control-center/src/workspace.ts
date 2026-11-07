@@ -1,4 +1,4 @@
-import {blankWorkspace,blankBindings,blankCaptions,ROLES} from './model.ts';
+import {blankWorkspace,blankBindings,blankCaptions,ROLES,DESK_ROLES} from './model.ts';
 import type {Workspace,Inventory,SceneNode,Connection,Bindings,SourceCandidate} from './model.ts';
 import {normalizeAudioObservations} from './audio-model.ts';
 export const object=(x:unknown):Record<string,any>=>x && typeof x==='object' && !Array.isArray(x)?x as Record<string,any>:{};
@@ -43,8 +43,8 @@ function inventory(raw:unknown):Inventory{
     }),capturedAt:text(i.capturedAt),warnings:['Saved observation, not live status. Reconnect before enabling OBS controls.']};
 }
 export function suggestBindings(i:Inventory):Bindings{
-  const b=blankBindings(),aliases={intro:['Intro'],main:['Main'],speaker:['Sprecher','Speaker'],bible:['Kapitel1','Bible'],outro:['Outro']};
-  for(const role of ROLES)b.scenes[role]=aliases[role].find(n=>i.scenes.includes(n))||'';
+  const b=blankBindings(),aliases={intro:['Intro'],main:['Main'],speaker:['Sprecher','Speaker'],bible:['Kapitel1','Bible'],prayer:['Beten','Gebet','Prayer'],outro:['Outro']};
+  for(const role of DESK_ROLES)b.scenes[role]=aliases[role].find(n=>i.scenes.includes(n))||'';
   for(const[key,names]of Object.entries({nextServiceText:['Nächster-Livestream','NEXTSTREAM'],audioInput:['1audio-de']}))(b as any)[key]=names.find(n=>i.inputs.some(x=>x.name===n))||'';
   return b;
 }
@@ -68,7 +68,7 @@ export function validateWorkspace(raw:unknown,imported=false):Workspace{
   w.obsUrl=localEndpoint(r.obsUrl||w.obsUrl,'obs');w.companionUrl=localEndpoint(r.companionUrl||w.companionUrl,'companion');
   w.inventory=r.inventory?inventory(r.inventory):null;w.connections=connections(r.connections);
   const b=object(r.bindings);
-  for(const role of ROLES)w.bindings.scenes[role]=text(object(b.scenes)[role]);
+  for(const role of DESK_ROLES)w.bindings.scenes[role]=text(object(b.scenes)[role]);
   for(const key of ['speakerText','bibleText','nextServiceText','audioInput'] as const)w.bindings[key]=text(b[key]);
   w.bindings.confirmed=!imported&&b.confirmed===true;
   const ids=new Set<string>();

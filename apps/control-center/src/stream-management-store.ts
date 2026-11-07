@@ -1,3 +1,4 @@
+import { parseSeries } from './broadcast-series.ts';
 import { mkdir, open, readFile, rename, stat, unlink } from 'node:fs/promises';
 import { dirname } from 'node:path';
 import { randomUUID } from 'node:crypto';
@@ -20,9 +21,14 @@ function remote(raw: unknown): RemoteBroadcast {
 /** An allowlist schema prevents accidental credential fields from entering this unencrypted file. */
 export function parseManagementState(raw: unknown): ManagementState {
     try {
-        const r = only(raw, ['version', 'batches', 'occurrences', 'templates']);
+        const r = only(raw, ['version', 'batches', 'occurrences', 'templates', 'series']);
         if (r.version !== 1 || !Array.isArray(r.batches) || r.batches.length > 2000 || !Array.isArray(r.occurrences) || r.occurrences.length > 5000 || !Array.isArray(r.templates) || r.templates.length > 100)
             throw new Error('shape');
+        if (r.series !== undefined && (!Array.isArray(r.series) || r.series.length > 100)) throw new Error('series');
+        const series = (r.series as unknown[] || []).map(parseSeries);
+        if (new Set(series.map(s => s.id)).size !== series.length) throw new Error('duplicate series');
+        const seriesIds = new Set(series.map(s => s.id));
+        const seriesDates = new Set<string>();
         const batchIds = new Set<string>(), occurrenceIds = new Set<string>(), eventIds = new Set<string>(), templateIds = new Set<string>();
         const batches = r.batches.map(rawBatch => {
             const b = only(rawBatch, ['id', 'fingerprint', 'name', 'recurrence', 'createdAt']), batchId = id(b.id);
@@ -36,8 +42,9 @@ export function parseManagementState(raw: unknown): ManagementState {
             if (occurrenceIds.has(oid) || !batchIds.has(batchId) || typeof o.timeOverride !== 'boolean' || !Array.isArray(o.targets) || !o.targets.length || o.targets.length > 2)
                 throw new Error('occurrence');
             occurrenceIds.add(oid);
-            if (o.seriesId !== null && (id(o.seriesId) !== batchId || !batches.find(b => b.id === batchId)?.recurrence))
+            if (o.seriesId !== null && !seriesIds.has(id(o.seriesId)) && (id(o.seriesId) !== batchId || !batches.find(b => b.id === batchId)?.recurrence))
                 throw new Error('series');
+            if (o.seriesId !== null) { const key = `${o.seriesId}:${o.originalDate}`; if (seriesDates.has(key)) throw new Error('duplicate series date'); seriesDates.add(key); }
             dateNumber(o.originalDate);
             dateNumber(o.date);
             clock(o.time);
@@ -71,7 +78,7 @@ export function parseManagementState(raw: unknown): ManagementState {
         });
         const templates = r.templates.map(rawTemplate => { const t = only(rawTemplate, ['id', 'name', 'destinations']), tid = id(t.id); if (templateIds.has(tid))
             throw new Error('template'); templateIds.add(tid); return { id: tid, name: text(t.name, 100), destinations: parseDestinations(t.destinations) }; });
-        return { version: 1, batches, occurrences, templates };
+        return { version: 1, batches, occurrences, templates, series };
     }
     catch {
         throw new ManagementError('state', 'Stream Management data is invalid. It has not been overwritten. Restore the local metadata file before making changes.');

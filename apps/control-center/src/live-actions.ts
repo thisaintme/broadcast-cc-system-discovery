@@ -29,7 +29,7 @@ export async function executeLiveAction(ctx:LiveActionContext,command:LiveComman
     if((await reader.read('GetInputMute',{inputName:w.bindings.audioInput})).inputMuted!==muted)throw new LiveFailure('Mute result not confirmed. Check OBS; no retry was made.');
     await ctx.verified(muted?'Selected service input muted.':'Selected service input unmuted.');
   };
-  const program=async(role:Role)=>{
+  const program=async(role:Role|'prayer')=>{
     const name=await requireScene(reader,w,role),before=await ctx.check();
     if(before.program!==name)await change('SetCurrentProgramScene',{sceneName:name});
     let confirmed=false;
@@ -86,6 +86,7 @@ export async function executeLiveAction(ctx:LiveActionContext,command:LiveComman
       await requireScene(reader,w,'main');const name=await requireText(reader,w,'bible');
       await caption(name,reference);await program('bible');return 'bible';
     }
+    case 'prayer':await requireScene(reader,w,'main');await program('prayer');return 'prayer';
     case 'outro':{
       const name=await requireText(reader,w,'outro'),next=nextServiceCaption(w,ctx.serviceId);
       await requireAudio(reader,w);await mute(true);await caption(name,next);await program('outro');return 'outro';

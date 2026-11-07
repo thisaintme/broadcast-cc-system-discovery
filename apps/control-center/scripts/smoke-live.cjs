@@ -33,7 +33,7 @@ async function finish(code,error){if(finished)return;finished=true;clearTimeout(
         assert.equal(grants,1);assert.equal(await evaluate("window.liveService.snapshot().then(s=>s.permissions.scenes)"),false);assert.equal(peer.state.writes.length,0);
         allowGrant=true;await click('enable-live');await wait("window.liveService.snapshot().then(s=>s.permissions.scenes)");assert.equal(peer.state.writes.length,0);
         assert.equal(await evaluate("document.getElementById('live-start').disabled"),true);
-        await click('open-speaker-panel');await field('live-speaker-select','Speaker B',true);await click('live-speaker');await wait("window.liveService.snapshot().then(s=>s.observation.program==='Speaker' && !s.busy)");
+        await click('open-speaker-panel');await field('live-speaker-select','Speaker B',true);await click('save-speaker-selection');await click('live-speaker');await wait("window.liveService.snapshot().then(s=>s.observation.program==='Speaker' && !s.busy)");
         peer.state.mutes.Microphone=true;peer.emit('InputMuteStateChanged',{inputName:'Microphone',inputMuted:true});
 
         // Regression: the schedule remains editable with live control and a pending return.
@@ -74,7 +74,7 @@ async function finish(code,error){if(finished)return;finished=true;clearTimeout(
         assert.deepEqual(peer.state.writes.slice(scheduleWrites).map(x=>x.name),['SetCurrentProgramScene']);
         assert.equal(await evaluate("window.liveService.snapshot().then(s=>s.permissions.scenes)"),true);
 
-        await click('open-bible-panel');await click('live-bible');await wait("window.liveService.snapshot().then(s=>s.observation.program==='Bible' && !s.busy)");
+        await click('open-bible-panel');await click('add-bible-reference');await click('live-bible');await wait("window.liveService.snapshot().then(s=>s.observation.program==='Bible' && !s.busy)");
         peer.state.program='Outro';peer.emit('CurrentProgramSceneChanged',{sceneName:'Outro'});await wait("window.liveService.snapshot().then(s=>s.returnAt===null)");
         await click('release-live');await wait("window.liveService.snapshot().then(s=>!s.permissions.scenes)");assert.equal(peer.state.streaming,true);
         await click('permission-scenes');await click('permission-audio');await click('permission-stream');await click('enable-live');await wait("window.liveService.snapshot().then(s=>s.permissions.stream && s.permissions.audio)");

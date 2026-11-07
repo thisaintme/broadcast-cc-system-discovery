@@ -23,6 +23,13 @@ async function main(){
     assert.equal(await d(`window.liveService.site().then(s=>s.version)`),require('../package.json').version);
     assert.equal(await d(`document.documentElement.dataset.theme`),'dark');
     assert.equal(await d(`document.querySelector('#nav-live').getAttribute('aria-current')`),'page');
+    assert.equal(await d(`document.querySelectorAll('.desk-sidebar').length`),1);
+    assert.equal(await d(`!!document.querySelector('#live-prayer')`),true);
+    await d(`document.querySelector('#nav-setup').click()`);
+    await until(()=>d(`!!document.querySelector('#save-obs-credential') && !!document.querySelector('#connect-saved-obs')`),'packaged credential settings');
+    assert.equal(await d(`document.querySelector('#live-obs-password').type`),'password');
+    await d(`document.querySelector('#nav-schedule').click()`);
+    await until(()=>d(`document.body.innerText.includes('Sendereihe')`),'packaged reusable series screen');
     await d(`document.querySelector('#nav-youtube').click()`);
     const manage=await page('stream-management');const m=expr=>evaluate(manage,expr);
     const tab=async label=>{await until(()=>m(`!![...document.querySelectorAll('nav button')].find(b=>b.textContent===${JSON.stringify(label)})`),'tab '+label);await m(`[...document.querySelectorAll('nav button')].find(b=>b.textContent===${JSON.stringify(label)}).click()`);await until(()=>m(`document.querySelector('nav button[aria-current=page]')?.textContent===${JSON.stringify(label)}`),label);};

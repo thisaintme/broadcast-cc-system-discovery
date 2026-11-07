@@ -1,9 +1,9 @@
 import type {ReadRequest,Workspace} from './model.ts';
-export type LiveRead = ReadRequest | 'GetProfileList' | 'GetCurrentPreviewScene' | 'GetCurrentSceneTransition' | 'GetMediaInputStatus' | 'GetLastReplayBufferReplay';
+export type LiveRead = ReadRequest | 'GetProfileList' | 'GetCurrentPreviewScene' | 'GetCurrentSceneTransition' | 'GetMediaInputStatus' | 'GetLastReplayBufferReplay' | 'GetSourceScreenshot';
 export type LiveWrite = 'SetCurrentProgramScene'|'SetInputSettings'|'SetSceneItemEnabled'|'SetInputMute'|'StartStream'|'StopStream'|'SetCurrentPreviewScene'|'TriggerStudioModeTransition'|'SetStudioModeEnabled'|'SetInputVolume'|'StartRecord'|'StopRecord'|'PauseRecord'|'ResumeRecord'|'StartReplayBuffer'|'StopReplayBuffer'|'SaveReplayBuffer'|'StartVirtualCam'|'StopVirtualCam'|'TriggerMediaInputAction';
-export const LIVE_COMMANDS=['prepare','intro','start','on-air','main','speaker','bible','outro','mute','unmute','stop','operator'] as const;
+export const LIVE_COMMANDS=['prepare','intro','start','on-air','main','speaker','bible','prayer','outro','mute','unmute','stop','operator'] as const;
 export type LiveCommand=typeof LIVE_COMMANDS[number];
-export type LivePhase='unknown'|'prepared'|'intro'|'main'|'speaker'|'bible'|'outro';
+export type LivePhase='unknown'|'prepared'|'intro'|'main'|'speaker'|'bible'|'prayer'|'outro';
 // Optional for compatibility with older clients. It is never loaded from disk.
 export interface LivePermissions{scenes:boolean;audio:boolean;stream:boolean;operator?:boolean}
 export const noPermissions=():LivePermissions=>({scenes:false,audio:false,stream:false});

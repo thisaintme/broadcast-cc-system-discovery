@@ -1,3 +1,4 @@
+import type { BroadcastSeries, SeriesPreview, SeriesRange } from './broadcast-series.ts';
 import type { AccountView, CreationPlan, DestinationDraft, EditRequest, Language, ManagementState, PlannedDate, Profile, RemoteBroadcast, Scope, Template } from './stream-management-model.ts';
 export interface ManagementPanel {
     state: ManagementState;
@@ -7,8 +8,10 @@ export interface ManagementPanel {
     error: string;
     notice: string;
     remote: Partial<Record<Language, RemoteBroadcast[]>>;
+    checkedAt?: Partial<Record<Language, number | null>>;
+    connectionErrors?: Partial<Record<Language, string>>;
 }
-export type ManagementAction = {kind:'stage-key';language:Language;key:string} | {kind:'verify-key'|'discard-key';language:Language} | {kind:'setup-client';clientId:string;clientSecret:string} | {kind:'setup-client-file'} | {
+export type ManagementAction = {kind:'series-save';series:BroadcastSeries} | {kind:'series-generate';range:SeriesRange} | {kind:'stage-key';language:Language;key:string} | {kind:'verify-key'|'discard-key';language:Language} | {kind:'setup-client';clientId:string;clientSecret:string} | {kind:'setup-client-file'} | {
     kind: 'create';
     plan: CreationPlan;
 } | {
@@ -64,6 +67,7 @@ export interface ManagementReply {
 }
 export interface ManagementBridge {
     panel(): Promise<ManagementPanel>;
+    seriesPreview(range: SeriesRange): Promise<SeriesPreview>;
     preview(plan: CreationPlan): Promise<PlannedDate[]>;
     action(action: ManagementAction): Promise<ManagementReply>;
     cancel(): Promise<void>;

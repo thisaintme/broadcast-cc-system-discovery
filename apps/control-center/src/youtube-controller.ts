@@ -50,7 +50,7 @@ export class YouTubeController {
     const o=this.host.state();if(!o.connected||o.streaming===null||!o.program||!o.permissionsReady)throw new YouTubeFailure('Connect OBS and enable Scenes and captions, Service audio and OBS start/stop on Live Service first.');
     if(this.host.selected()!==serviceId)throw new YouTubeFailure('Select this same service on Live Service before starting or ending its broadcast.');
   }
-  async review(raw:unknown):Promise<BroadcastReview>{
+  async review(raw:unknown,preparingOutro=false):Promise<BroadcastReview>{
     if(!this.loaded)throw new YouTubeFailure('Saved YouTube associations could not be loaded. No event can be created until that local data is recovered.');
     const epoch=this.epoch,command=parseCommand(raw),serviceId=command.kind==='create'?command.draft.serviceId:command.serviceId;
     if(!this.host.services().some(s=>s.id===serviceId))throw new YouTubeFailure('Select a service from the local schedule.');
@@ -78,7 +78,7 @@ export class YouTubeController {
         if(broadcast.lifeCycle!=='ready'||!['created','ready','inactive'].includes(ingest.status))throw new YouTubeFailure('This event is not ready to start, or its ingest is already active/unknown. Review YouTube Studio.');
       }else if(command.kind==='publish-intro'){
         if(o.streaming!==true||o.reconnecting!==false||o.program!==o.intro||o.muted!==true||ingest.status!=='active'||!['ready','liveStarting'].includes(broadcast.lifeCycle))throw new YouTubeFailure('Recovery requires OBS transmitting the mapped Intro with muted service audio, the matching ingest active, and this event awaiting publication.');
-      }else if(!['live','complete'].includes(broadcast.lifeCycle)||o.streaming!==true||o.program!==o.outro||o.muted!==true)throw new YouTubeFailure('Show Outro and confirm service audio is muted before ending this linked YouTube broadcast. An already-completed event may then be used to finish stopping OBS.');
+      }else if(!['live','complete'].includes(broadcast.lifeCycle)||o.streaming!==true||(!preparingOutro&&(o.program!==o.outro||o.muted!==true)))throw new YouTubeFailure('Show Outro and confirm service audio is muted before ending this linked YouTube broadcast. An already-completed event may then be used to finish stopping OBS.');
       detail=`Channel: ${channel.title} (${channel.id})\nEvent: ${broadcast.title}\nVisibility: ${broadcast.privacy}\nYouTube state: ${broadcast.lifeCycle}\n\n`+(command.kind==='start'?'Mute service audio, put Intro on Program, start the verified OBS destination, wait for YouTube ingest, then make this event live. Viewers allowed by the selected visibility will see Intro. On Air remains a separate Main + unmute action.':command.kind==='publish-intro'?'Continue publishing the currently transmitting Intro. Do not restart OBS, change its picture or unmute audio.':'Complete this YouTube event, verify completion, then stop the matching OBS transmission. This is irreversible for the YouTube event. Outro remains displayed.');
     }
     if(epoch!==this.epoch)throw new YouTubeFailure('YouTube review was cancelled.');

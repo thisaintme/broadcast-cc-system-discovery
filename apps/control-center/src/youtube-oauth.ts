@@ -17,12 +17,29 @@ export function sameState(expected:string,actual:string):boolean{const a=Buffer.
 /** System-browser OAuth with PKCE and a short-lived loopback listener. No Google password enters this app. */
 export class YouTubeOAuth {
   private credentials:Credentials|null=null;private access='';private expires=0;private epoch=0;
+  private writes:Promise<void>=Promise.resolve();
   private cancelLogin:(()=>void)|null=null;private refreshing:Promise<string>|null=null;
   constructor(private store:SecretStore,private openBrowser:(url:string)=>Promise<void>,private http:typeof fetch=fetch){}
+  private write(action:()=>Promise<void>):Promise<void>{
+    const next=this.writes.then(action);this.writes=next.catch(()=>{});return next;
+  }
+  private persist(next:Credentials,epoch:number):Promise<void>{
+    return this.write(async()=>{
+      if(epoch!==this.epoch)throw new YouTubeFailure('Google authorization changed before saving.');
+      const previous=this.credentials;
+      await this.store.save(JSON.stringify(next));
+      if(epoch!==this.epoch){
+        // A queued Forget must win; restore the prior state before releasing this transaction.
+        if(previous)await this.store.save(JSON.stringify(previous));else await this.store.clear();
+        throw new YouTubeFailure('Google authorization changed while saving.');
+      }
+      this.credentials=next;
+    });
+  }
   get configured():boolean{return !!this.credentials;}
   get channel():Channel|null{return this.credentials?.channel?{...this.credentials.channel}:null;}
   async load():Promise<void>{
-    const saved=await this.store.load();if(!saved)return;
+    const saved=await this.store.load();if(!saved){this.credentials=null;this.access='';this.expires=0;return;}
     try{
       const r=record(JSON.parse(saved)),c=desktopClient({installed:{client_id:r.clientId,client_secret:r.clientSecret}});
       if(typeof r.refreshToken!=='string'||r.refreshToken.length>8192)throw new Error();
@@ -32,13 +49,13 @@ export class YouTubeOAuth {
   }
   async configure(raw:unknown):Promise<void>{
     if(this.credentials?.refreshToken)throw new YouTubeFailure('Forget the existing Google sign-in before replacing its OAuth client.');
-    const c={...desktopClient(raw),refreshToken:'',channel:null};await this.store.save(JSON.stringify(c));this.credentials=c;this.cancel();
+    const c={...desktopClient(raw),refreshToken:'',channel:null};this.cancel();await this.persist(c,this.epoch);
   }
   cancel():void{this.epoch++;this.cancelLogin?.();this.cancelLogin=null;}
   private async tokenRequest(params:Record<string,string>):Promise<Record<string,any>>{
     let r:Response;try{r=await this.http('https://oauth2.googleapis.com/token',{method:'POST',body:new URLSearchParams(params),headers:{'Content-Type':'application/x-www-form-urlencoded'},redirect:'error',signal:AbortSignal.timeout(12000)});}catch{throw new YouTubeFailure('Google authorization could not be completed. No broadcast was changed.');}
     let data:Record<string,any>;try{data=record(await r.json());}catch{throw new YouTubeFailure('Google returned an unreadable authorization response.');}
-    if(!r.ok)throw new YouTubeFailure('Google authorization was refused, expired or revoked. Sign in again.');
+    if(!r.ok){if(['invalid_grant','invalid_client','unauthorized_client','access_denied'].includes(data.error)||r.status===401)throw new YouTubeFailure('Google authorization was refused, expired or revoked. Sign in again.');throw new YouTubeFailure('Google authorization is temporarily unavailable. Saved credentials were retained; retry when the connection is restored.');}
     if(typeof data.access_token!=='string'||!data.access_token||data.access_token.length>16384||typeof data.expires_in!=='number'||!Number.isFinite(data.expires_in)||data.expires_in<=0||data.token_type!=='Bearer')throw new YouTubeFailure('Google returned incomplete authorization.');
     if(typeof data.scope==='string'&&!data.scope.split(' ').includes(YOUTUBE_SCOPE))throw new YouTubeFailure('The requested YouTube management permission was not granted.');
     return data;
@@ -72,7 +89,7 @@ export class YouTubeOAuth {
       const data=await this.tokenRequest({client_id:c.clientId,...(c.clientSecret?{client_secret:c.clientSecret}:{}),redirect_uri:redirect,grant_type:'authorization_code',code,code_verifier:verifier});valid();
       if(typeof data.refresh_token!=='string'||!data.refresh_token||data.refresh_token.length>8192)throw new YouTubeFailure('Google did not grant persistent access. Reconnect with consent; no plaintext credentials were saved.');
       const channel=await resolveChannel(data.access_token);valid();
-      const next={...c,refreshToken:data.refresh_token,channel};await this.store.save(JSON.stringify(next));valid();
+      const next={...c,refreshToken:data.refresh_token,channel};await this.persist(next,epoch);valid();
       this.credentials=next;this.access=data.access_token;this.expires=Date.now()+data.expires_in*1000;return channel;
     }finally{clearTimeout(timeout);close();if(epoch===this.epoch)this.cancelLogin=null;}
   }
@@ -83,13 +100,13 @@ export class YouTubeOAuth {
     this.refreshing=(async()=>{
       const data=await this.tokenRequest({client_id:c.clientId,...(c.clientSecret?{client_secret:c.clientSecret}:{}),grant_type:'refresh_token',refresh_token:c.refreshToken});
       if(epoch!==this.epoch)throw new YouTubeFailure('Google authorization changed during refresh.');
+      if(data.refresh_token!==undefined){if(typeof data.refresh_token!=='string'||!data.refresh_token||data.refresh_token.length>8192)throw new YouTubeFailure('Google returned invalid persistent authorization.');const next={...c,refreshToken:data.refresh_token};await this.persist(next,epoch);if(epoch!==this.epoch)throw new YouTubeFailure('Google authorization changed during refresh.');this.credentials=next;}
       this.access=data.access_token;this.expires=Date.now()+data.expires_in*1000;return this.access;
     })();try{return await this.refreshing;}finally{this.refreshing=null;}
   }
   async forget():Promise<void>{
     this.cancel();this.access='';this.expires=0;
-    const c=this.credentials;if(c){const next={...c,refreshToken:'',channel:null};await this.store.save(JSON.stringify(next));this.credentials=next;}
-    else await this.store.clear();
+    await this.write(async()=>{const c=this.credentials;if(c){const next={...c,refreshToken:'',channel:null};await this.store.save(JSON.stringify(next));this.credentials=next;}else await this.store.clear();});
     // This removes local access only. Google-account permission revocation is a separate user action.
   }
 }
