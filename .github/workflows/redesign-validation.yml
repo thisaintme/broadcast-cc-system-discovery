@@ -3,24 +3,27 @@ on:
   push:
     branches: ['feat/konzept-b-secrets-series']
     paths: ['apps/control-center/**', '.github/workflows/redesign-validation.yml']
-permissions:
-  contents: read
-concurrency:
-  group: redesign-validation-${{ github.ref }}
-  cancel-in-progress: true
+permissions: {contents: read}
+concurrency: {group: 'redesign-validation-${{ github.ref }}', cancel-in-progress: true}
 jobs:
   source-workspace:
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    defaults: {run: {working-directory: apps/control-center}}
     steps:
       - uses: actions/checkout@v4
-        with:
-          persist-credentials: false
-      - name: Export source snapshot for implementation and audit
-        run: git archive --format=tar.gz --output="$RUNNER_TEMP/redesign-source.tar.gz" HEAD
+        with: {persist-credentials: false}
+      - uses: actions/setup-node@v4
+        with: {node-version: '24'}
+      - name: Install baseline implementation toolchain
+        run: npm install --ignore-scripts --no-audit --no-fund
+      - name: Baseline checks
+        run: npm run typecheck && npm test && npm run build
+      - name: Export reproducible toolchain
+        run: tar -czf "$RUNNER_TEMP/redesign-toolchain.tar.gz" node_modules package-lock.json
       - uses: actions/upload-artifact@v4
         with:
-          name: redesign-source
-          path: ${{ runner.temp }}/redesign-source.tar.gz
+          name: redesign-toolchain
+          path: ${{ runner.temp }}/redesign-toolchain.tar.gz
           if-no-files-found: error
           retention-days: 2
