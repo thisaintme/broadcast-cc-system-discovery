@@ -1,29 +1,155 @@
-name: Redesign validation and macOS preview
+name: Redesign validation and verified macOS DMG
 on:
+  workflow_dispatch:
   push:
     branches: ['feat/konzept-b-secrets-series']
-    paths: ['apps/control-center/**', '.github/workflows/redesign-validation.yml']
+    paths: ['apps/control-center/**', '.github/workflows/redesign-validation.yml', '.github/redesign-transfer/**']
 permissions: {contents: read}
 concurrency: {group: 'redesign-validation-${{ github.ref }}', cancel-in-progress: true}
 jobs:
-  source-workspace:
+  source:
+    # One-time, checksum-verified transport from the implementation workspace.
+    # The resulting commit contains readable source and removes all transport files.
     runs-on: ubuntu-latest
     timeout-minutes: 10
-    defaults: {run: {working-directory: apps/control-center}}
+    permissions: {contents: write, actions: read}
+    outputs:
+      sha: ${{ steps.publish.outputs.sha }}
     steps:
       - uses: actions/checkout@v4
-        with: {persist-credentials: false}
-      - uses: actions/setup-node@v4
-        with: {node-version: '24'}
-      - name: Install baseline implementation toolchain
-        run: npm install --ignore-scripts --no-audit --no-fund
-      - name: Baseline checks
-        run: npm run typecheck && npm test && npm run build
-      - name: Export reproducible toolchain
-        run: tar -czf "$RUNNER_TEMP/redesign-toolchain.tar.gz" node_modules package-lock.json
-      - uses: actions/upload-artifact@v4
+        with: {ref: '${{ github.sha }}'}
+      - name: Detect pending source transport
+        id: transport
+        run: |
+          if test -d .github/redesign-transfer; then echo 'pending=true' >> "$GITHUB_OUTPUT"; else echo 'pending=false' >> "$GITHUB_OUTPUT"; fi
+      - uses: actions/download-artifact@v4
+        if: steps.transport.outputs.pending == 'true'
         with:
           name: redesign-toolchain
-          path: ${{ runner.temp }}/redesign-toolchain.tar.gz
+          run-id: 42364846352
+          github-token: ${{ github.token }}
+          path: /tmp/redesign-baseline-toolchain
+      - name: Apply exact tested source and dependency lock
+        if: steps.transport.outputs.pending == 'true'
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import base64,hashlib,lzma,pathlib,subprocess,tarfile,json
+          parts=sorted(pathlib.Path('.github/redesign-transfer').glob('part-*.txt'))
+          assert len(parts)==5
+          data=base64.b64decode(''.join(p.read_text() for p in parts),validate=True)
+          assert hashlib.sha256(data).hexdigest()=='8bf3174faa7c67f05f2310306b05a2e91172e99ec202e037cb562eeae94bdaa9'
+          patch=lzma.decompress(data)
+          for line in patch.decode().splitlines():
+              if line.startswith('diff --git '):
+                  assert line.startswith('diff --git a/apps/control-center/') and ' b/apps/control-center/' in line
+          subprocess.run(['git','apply','--unidiff-zero','--check','-'],input=patch,check=True)
+          subprocess.run(['git','apply','--unidiff-zero','-'],input=patch,check=True)
+          with tarfile.open('/tmp/redesign-baseline-toolchain/redesign-toolchain.tar.gz') as archive:
+              raw=archive.extractfile('package-lock.json').read()
+          assert hashlib.sha256(raw).hexdigest()=='243038f76837bdf16130c157cb2ebe1487db52e3e430fedc39e8b00416a13c2d'
+          lock=json.loads(raw);lock['version']='0.3.0-alpha.6';lock['packages']['']['version']='0.3.0-alpha.6'
+          pathlib.Path('apps/control-center/package-lock.json').write_text(json.dumps(lock,indent=2)+'\n')
+          PY
+          git rm -r .github/redesign-transfer
+          git add apps/control-center
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git commit -m 'Implement Konzept B desk, secure reconnect, broadcast series and native acceptance tests'
+          git push origin HEAD:refs/heads/feat/konzept-b-secrets-series
+      - name: Record actual source commit
+        id: publish
+        run: echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+  mac:
+    needs: source
+    runs-on: macos-15-intel
+    timeout-minutes: 30
+    env: {CSC_IDENTITY_AUTO_DISCOVERY: 'false'}
+    defaults: {run: {working-directory: apps/control-center, shell: bash}}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.source.outputs.sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with: {node-version: '24'}
+      - name: Install locked dependencies, typecheck and build
+        run: npm ci --no-audit --no-fund && npm run typecheck && npm run build
+      - name: Full unit regression suite
+        run: |
+          set -euo pipefail
+          mkdir -p release/validation
+          node --experimental-transform-types --test --test-reporter=tap tests/*.test.mjs > release/validation/regression.tap || { grep -A20 '^not ok' release/validation/regression.tap; exit 1; }
+          tail -9 release/validation/regression.tap
+      - name: Real Keychain, stored OBS startup, queue, prayer and series acceptance
+        run: |
+          set -euo pipefail
+          ./node_modules/.bin/electron scripts/smoke-redesign.cjs 2>&1 | tee release/validation/native-redesign.log
+      - name: Account and manual stream key acceptance
+        run: |
+          set -euo pipefail
+          ./node_modules/.bin/electron scripts/smoke-stream-management.cjs 2>&1 | tee release/validation/native-accounts.log
+      - name: Existing native OBS, safety and layout acceptance
+        run: |
+          set -euo pipefail
+          for suite in smoke smoke-obs smoke-offline smoke-audio smoke-service-audio smoke-readiness smoke-live smoke-operator smoke-design; do
+            ./node_modules/.bin/electron scripts/run-smoke.cjs "$suite.cjs" 2>&1 | tee "release/validation/$suite.log"
+          done
+      - name: Package the tested checkout as universal DMG
+        run: ./node_modules/.bin/electron-builder --mac dmg --universal --publish never
+      - name: Mount and exercise the actual packaged application
+        run: |
+          set -euo pipefail
+          version=$(node -p "require('./package.json').version")
+          image="release/Broadcast-Control-Center-Preview-${version}-universal.dmg"
+          test -s "$image"
+          hdiutil verify "$image"
+          volume="$RUNNER_TEMP/redesign-preview-volume"; mkdir "$volume"
+          hdiutil attach -readonly -nobrowse -mountpoint "$volume" "$image"
+          trap 'hdiutil detach "$volume"' EXIT
+          apps=("$volume"/*.app); test "${#apps[@]}" -eq 1
+          plist="${apps[0]}/Contents/Info.plist"
+          test "$(/usr/libexec/PlistBuddy -c 'Print CFBundleShortVersionString' "$plist")" = "$version"
+          test "$(/usr/libexec/PlistBuddy -c 'Print CFBundleIdentifier' "$plist")" = org.broadcastcc.controlcenter.preview
+          binary="${apps[0]}/Contents/MacOS/$(/usr/libexec/PlistBuddy -c 'Print CFBundleExecutable' "$plist")"
+          lipo "$binary" -verify_arch x86_64 arm64
+          node scripts/check-mounted-preview.cjs "$binary" 2>&1 | tee release/validation/mounted-dmg.log
+          (cd release && shasum -a 256 *.dmg > SHA256SUMS.txt)
+          node - <<'JS'
+          const fs=require('node:fs'),cp=require('node:child_process');
+          const tap=fs.readFileSync('release/validation/regression.tap','utf8');
+          const build={version:require('./package.json').version,sourceCommit:cp.execFileSync('git',['rev-parse','HEAD'],{encoding:'utf8'}).trim(),workflowRun:process.env.GITHUB_RUN_ID,architectures:['x86_64','arm64'],runtimeTestArchitecture:process.arch,unitTests:Number(tap.match(/^# tests (\d+)$/m)[1]),unitPass:Number(tap.match(/^# pass (\d+)$/m)[1]),unitFail:Number(tap.match(/^# fail (\d+)$/m)[1]),nativeSuites:11,mountedDmgSmoke:'passed',signed:false,notarized:false,builtAt:new Date().toISOString()};
+          if(build.unitFail!==0||build.unitPass!==build.unitTests)throw Error('Unclean regression result');
+          fs.writeFileSync('release/BUILD.json',JSON.stringify(build,null,2)+'\n');
+          JS
+          cp docs/REDESIGN-ALPHA6.md release/README.md
+          git archive --format=zip --output="$RUNNER_TEMP/broadcast-cc-alpha6-source.zip" HEAD
+      - name: Upload verified DMG and provenance
+        uses: actions/upload-artifact@v4
+        with:
+          name: Broadcast-CC-0.3.0-alpha.6-verified-universal-DMG
+          path: |
+            apps/control-center/release/*-universal.dmg
+            apps/control-center/release/SHA256SUMS.txt
+            apps/control-center/release/BUILD.json
+            apps/control-center/release/README.md
           if-no-files-found: error
-          retention-days: 2
+          compression-level: 0
+          retention-days: 14
+      - name: Upload corresponding source
+        uses: actions/upload-artifact@v4
+        with:
+          name: Broadcast-CC-alpha6-source
+          path: ${{ runner.temp }}/broadcast-cc-alpha6-source.zip
+          if-no-files-found: error
+          retention-days: 14
+      - name: Keep diagnostic evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: Redesign-native-validation
+          path: |
+            apps/control-center/release/validation/**
+            apps/control-center/release/*.png
+          if-no-files-found: warn
+          retention-days: 14
