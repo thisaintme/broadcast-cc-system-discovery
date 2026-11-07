@@ -41,7 +41,7 @@ async function finish(code,e){if(finished)return;finished=true;clearTimeout(time
    const preview=await ev(`window.streamManagement.seriesPreview(${JSON.stringify(range)})`);assert.ok(preview.newCount>=4&&preview.newCount<=5);assert.equal(await ev(`window.streamManagement.panel().then(p=>p.state.occurrences.length)`),0);
    await ev(`document.getElementById('nav-setup').click()`);await wait(`!!document.getElementById('connect-saved-obs')`);
    assert.equal(await ev(`document.getElementById('live-obs-password').value`),'');
-   assert.equal(await ev(`document.querySelectorAll('.desk-sidebar').length`),1);
+   assert.equal(await ev(`document.querySelectorAll('.bcc-rail .desk-sidebar-content').length`),1);
    assert.equal(await ev(`document.documentElement.scrollWidth>innerWidth+2`),false);
    fs.mkdirSync('release',{recursive:true});fs.writeFileSync('release/native-redesign.png',(await win.webContents.capturePage()).toPNG());
    console.log('PASS native redesign: real Keychain ciphertext reused at startup; zero startup output writes; speaker/queue state; confirmed Bible advancement; Prayer return; local series preview; persistent sidebar. No real accounts or equipment used.');await finish(0);
