@@ -74,7 +74,7 @@ async function finish(code,error){if(finished)return;finished=true;clearTimeout(
         assert.deepEqual(peer.state.writes.slice(scheduleWrites).map(x=>x.name),['SetCurrentProgramScene']);
         assert.equal(await evaluate("window.liveService.snapshot().then(s=>s.permissions.scenes)"),true);
 
-        await click('open-bible-panel');await click('add-bible-reference');await click('live-bible');await wait("window.liveService.snapshot().then(s=>s.observation.program==='Bible' && !s.busy)");
+        await click('open-bible-panel');assert.equal(await evaluate("document.getElementById('add-bible-reference').disabled"),true);await field('live-bible-reference','Joh 3, 16');await click('add-bible-reference');await click('live-bible');await wait("window.liveService.snapshot().then(s=>s.observation.program==='Bible' && !s.busy)");assert.equal(peer.state.settings['Reference text'].text,'Johannes Kap. 3 Vers 16');
         peer.state.program='Outro';peer.emit('CurrentProgramSceneChanged',{sceneName:'Outro'});await wait("window.liveService.snapshot().then(s=>s.returnAt===null)");
         await click('release-live');await wait("window.liveService.snapshot().then(s=>!s.permissions.scenes)");assert.equal(peer.state.streaming,true);
         await click('permission-scenes');await click('permission-audio');await click('permission-stream');await click('enable-live');await wait("window.liveService.snapshot().then(s=>s.permissions.stream && s.permissions.audio)");
