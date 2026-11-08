@@ -1,0 +1,121 @@
+name: Operator desk + YouTube — tested Mac preview
+on:
+  push:
+    branches: ['preview/stream-management-dmg']
+    paths: ['apps/control-center/**', '.github/workflows/stream-management-preview.yml']
+  workflow_dispatch:
+permissions: {contents: read}
+concurrency:
+  group: bcc-stream-management-preview
+  cancel-in-progress: true
+jobs:
+  mac:
+    if: github.ref == 'refs/heads/preview/stream-management-dmg'
+    runs-on: macos-15-intel
+    timeout-minutes: 35
+    defaults:
+      run:
+        working-directory: apps/control-center
+        shell: bash
+    env:
+      CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+    steps:
+      - uses: actions/checkout@v4
+        with: {persist-credentials: false}
+      - uses: actions/setup-node@v4
+        with: {node-version: '24'}
+      - name: Install application dependencies
+        run: npm install --no-fund --no-audit
+      - name: Typecheck and build the checked-in Electron app
+        run: npm run typecheck && npm run build
+      - name: Full application regression suite
+        run: |
+          set -euo pipefail
+          if ! node --experimental-transform-types --test --test-reporter=tap tests/*.test.mjs > "$RUNNER_TEMP/regression.tap"; then grep -A12 -E '^not ok' "$RUNNER_TEMP/regression.tap"; exit 1; fi
+          tail -n 9 "$RUNNER_TEMP/regression.tap"
+      - name: Nine native Electron scenarios including the redesigned desk
+        run: |
+          set -euo pipefail
+          for suite in smoke smoke-obs smoke-offline smoke-audio smoke-service-audio smoke-readiness smoke-live smoke-operator smoke-design; do
+            ./node_modules/.bin/electron scripts/run-smoke.cjs "$suite.cjs"
+          done
+      - name: Stream Management menu, account slots and eight Sundays across DST
+        run: |
+          set -euo pipefail
+          ./node_modules/.bin/electron scripts/smoke-stream-management.cjs
+          cp release/smoke-stream-management.png "$RUNNER_TEMP/smoke-stream-management.png"
+          cp release/smoke-design-{dark,light}.png "$RUNNER_TEMP/"
+          cp -R dist "$RUNNER_TEMP/tested-dist"
+      - name: Build the universal preview disk image from the tested dist (never publish)
+        id: package
+        run: ./node_modules/.bin/electron-builder --mac dmg --universal --publish never
+      - name: Mount the DMG and exercise the redesigned desk → YouTube → eight paired Sundays
+        run: |
+          set -euo pipefail
+          dmg=(release/*.dmg); test "${#dmg[@]}" -eq 1; test -s "${dmg[0]}"
+          hdiutil verify "${dmg[0]}"
+          mount="$RUNNER_TEMP/bcc-preview-volume"; mkdir "$mount"
+          hdiutil attach -readonly -nobrowse -mountpoint "$mount" "${dmg[0]}"
+          trap 'hdiutil detach "$mount"' EXIT
+          app=("$mount"/*.app); test "${#app[@]}" -eq 1
+          plist="${app[0]}/Contents/Info.plist"
+          exe=$(/usr/libexec/PlistBuddy -c 'Print CFBundleExecutable' "$plist")
+          binary="${app[0]}/Contents/MacOS/$exe"
+          lipo "$binary" -archs
+          lipo "$binary" -verify_arch x86_64 arm64
+          python3 - "${app[0]}/Contents/Resources/app.asar" "$RUNNER_TEMP/tested-dist" <<'PY'
+          import sys,struct,json
+          from pathlib import Path
+          with open(sys.argv[1], 'rb') as f:
+              signature, header_len, pickle_len, json_len=struct.unpack('<IIII', f.read(16))
+              assert signature==4 and 0 < json_len <= pickle_len <= header_len <= 64*1024*1024
+              files=json.loads(f.read(json_len))['files']
+              def content(node):
+                  assert not node.get('unpacked')
+                  start, size=int(node['offset']), int(node['size'])
+                  assert start >= 0 and size >= 0
+                  f.seek(8+header_len+start); data=f.read(size)
+                  assert len(data)==size; return data
+              def walk(nodes, prefix=''):
+                  for name, n in nodes.items():
+                      rel=prefix+name
+                      if 'files' in n: yield from walk(n['files'],rel+'/')
+                      else: yield rel,n
+              assert json.loads(content(files['package.json']))['version']=='0.3.0-alpha.4'
+              root=Path(sys.argv[2]); packed=dict(walk(files['dist']['files']))
+              expected={p.relative_to(root).as_posix():p for p in root.rglob('*') if p.is_file()}
+              assert expected.keys()==packed.keys(), 'Packaged file list differs'
+              for rel,p in expected.items(): assert p.read_bytes()==content(packed[rel]), rel
+              print(f'All {len(expected)} compiled files match the tested bytes.')
+          PY
+          node scripts/check-mounted-preview.cjs "$binary"
+          cp "$RUNNER_TEMP/smoke-stream-management.png" "$RUNNER_TEMP"/smoke-design-{dark,light}.png release/
+          (cd release && shasum -a 256 *.dmg > SHA256SUMS.txt)
+          printf 'commit=%s\narchitectures=x86_64 arm64\n' "$GITHUB_SHA" > release/BUILD.txt
+          grep -E '^# (tests|pass|fail|skipped) ' "$RUNNER_TEMP/regression.tap" >> release/BUILD.txt
+          cat release/BUILD.txt release/SHA256SUMS.txt >> "$GITHUB_STEP_SUMMARY"
+      - name: Upload verified disk image
+        uses: actions/upload-artifact@v4
+        with:
+          name: Broadcast-CC-Redesign-YouTube-macOS-universal
+          path: |
+            apps/control-center/release/*.dmg
+            apps/control-center/release/SHA256SUMS.txt
+            apps/control-center/release/BUILD.txt
+            apps/control-center/release/smoke-stream-management.png
+            apps/control-center/release/smoke-design-*.png
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 14
+      - name: Preserve installer and test evidence for diagnostics if packaging passed but verification failed
+        if: failure() && steps.package.outcome == 'success'
+        uses: actions/upload-artifact@v4
+        with:
+          name: Internal-DMG-candidate-for-diagnosis-not-verified
+          path: |
+            apps/control-center/release/*.dmg
+            ${{ runner.temp }}/tested-dist
+            ${{ runner.temp }}/regression.tap
+            ${{ runner.temp }}/smoke-stream-management.png
+          compression-level: 0
+          retention-days: 1

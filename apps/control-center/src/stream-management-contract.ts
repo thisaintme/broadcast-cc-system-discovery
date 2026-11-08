@@ -1,0 +1,75 @@
+import type { BroadcastSeries, SeriesPreview, SeriesRange } from './broadcast-series.ts';
+import type { AccountView, CreationPlan, DestinationDraft, EditRequest, Language, ManagementState, PlannedDate, Profile, RemoteBroadcast, Scope, Template } from './stream-management-model.ts';
+export interface ManagementPanel {
+    state: ManagementState;
+    accounts: AccountView[];
+    busy: boolean;
+    ready: boolean;
+    error: string;
+    notice: string;
+    remote: Partial<Record<Language, RemoteBroadcast[]>>;
+    checkedAt?: Partial<Record<Language, number | null>>;
+    connectionErrors?: Partial<Record<Language, string>>;
+}
+export type ManagementAction = {kind:'series-save';series:BroadcastSeries} | {kind:'series-generate';range:SeriesRange} | {kind:'stage-key';language:Language;key:string} | {kind:'verify-key'|'discard-key';language:Language} | {kind:'setup-client';clientId:string;clientSecret:string} | {kind:'setup-client-file'} | {
+    kind: 'create';
+    plan: CreationPlan;
+} | {
+    kind: 'add-destination';
+    occurrenceId: string;
+    draft: DestinationDraft;
+} | {
+    kind: 'edit';
+    edit: EditRequest;
+} | {
+    kind: 'remove';
+    occurrenceId: string;
+    scope: Scope;
+    language?: Language;
+} | {
+    kind: 'retry' | 'prepare';
+    occurrenceId: string;
+    language: Language;
+} | {
+    kind: 'recover';
+    occurrenceId: string;
+    language: Language;
+    broadcastId: string;
+} | {
+    kind: 'adopt';
+    language: Language;
+    broadcastId: string;
+    madeForKids: boolean;
+} | {
+    kind: 'configure' | 'connect' | 'disconnect' | 'profiles' | 'forget-key' | 'reveal-key' | 'copy-key' | 'copy-server' | 'refresh';
+    language: Language;
+} | {
+    kind: 'select-profile';
+    language: Language;
+    profileId: string;
+} | {
+    kind: 'template';
+    template: Template;
+} | {
+    kind: 'open' | 'copy-link';
+    language: Language;
+    broadcastId: string;
+} | {
+    kind: 'operator';
+    occurrenceId: string;
+    germanOnly: boolean;
+} | {
+    kind: 'legacy-controls';
+};
+export interface ManagementReply {
+    panel: ManagementPanel;
+    profiles?: Profile[];
+}
+export interface ManagementBridge {
+    panel(): Promise<ManagementPanel>;
+    seriesPreview(range: SeriesRange): Promise<SeriesPreview>;
+    preview(plan: CreationPlan): Promise<PlannedDate[]>;
+    action(action: ManagementAction): Promise<ManagementReply>;
+    cancel(): Promise<void>;
+    subscribe(callback: (panel: ManagementPanel) => void): () => void;
+}
