@@ -7,6 +7,7 @@ function fixture(){
   state.collection='Synthetic production collection';state.profile='Synthetic profile';state.reconnecting=false;state.streamReply=undefined;
   state.availableRequests=['GetStreamStatus','StartStream','StopStream'];state.ignoreStart=false;state.ignoreStop=false;
   function request(name,data={}){
+    if(name==='GetSourceScreenshot'&&state.screenshotData){state.calls.push({name,data:clone(data)});return {imageData:state.screenshotData};}
     if(!['GetVersion','GetProfileList','GetStreamStatus','StartStream','StopStream'].includes(name))return base.request(name,data);
     state.calls.push({name,data:clone(data)});state.before(name,data);
     if(state.failures.has(name))throw Object.assign(new Error('PRIVATE_UPSTREAM_DIAGNOSTIC'),state.failures.get(name));

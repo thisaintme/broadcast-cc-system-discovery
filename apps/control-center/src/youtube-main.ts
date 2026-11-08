@@ -1,3 +1,4 @@
+import {DeskOutro} from './desk-outro.ts';
 import {EndCountdown} from './end-countdown.ts';
 import type {EndScope} from './end-countdown.ts';
 import {assertReviewedMetadata} from './youtube-controller.ts';
@@ -26,7 +27,7 @@ interface Dependencies {
 }
 /** Separate UI/preload; all credentials and endpoint matching stay in this process. */
 export class YouTubeManager {
-  private deskEpoch=0;private ending:EndCountdown;private initialization:Promise<void>|null=null;
+  private deskOutro:DeskOutro;private deskEpoch=0;private ending:EndCountdown;private initialization:Promise<void>|null=null;
   private window:BrowserWindow|null=null;private loaded=false;private working=false;private outputOperation=false;private opening:Promise<void>|null=null;
   private error='';private notice='Staged YouTube integration. No event is created or started by opening this screen.';
   private broadcasts:Broadcast[]=[];private checkedAt:number|null=null;
@@ -48,6 +49,17 @@ export class YouTubeManager {
       log:(action,stage,detail)=>d.journal.append(action,stage,detail),
     };
     this.controller=new YouTubeController(this.api,new YouTubeFileState(path.join(directory,'broadcasts.json')),this.host,()=>this.oauth.channel);
+    this.deskOutro=new DeskOutro({snapshot:()=>d.live.snapshot(),ticket:()=>d.live.ticket(),outroScene:()=>d.workspace().bindings.scenes.outro,refresh:()=>d.live.refresh(),command:c=>d.live.command(c),exclusive:fn=>d.exclusive(fn),prepare:async guard=>{
+      guard();const serviceId=this.host.selected();
+      // A stored link is never downgraded to OBS-only just because Google cannot be reached.
+      const managed=this.controller.links().some(link=>link.serviceId===serviceId);
+      const review=managed?await this.controller.review({kind:'end',serviceId}):null;guard();
+      return {completed:managed?'Deutsch auf YouTube und OBS beendet. Русский / Web Presenter bleiben unverändert.':'OBS-Übertragung beendet. YouTube-Abschluss nicht separat bestätigt; Русский / Web Presenter bleiben unverändert.',execute:async valid=>{
+        this.outputOperation=true;
+        try{await d.exclusive(async()=>{valid();if(review)await this.controller.execute(review);else await d.live.command('stop');});}
+        finally{this.outputOperation=false;this.emit();void this.management.observe();}
+      }};
+    }},this.ending);
     this.management=new StreamManagementWindow({directory,parent:d.parent,germanOAuth:this.oauth,externalBusy:()=>this.working||d.live.busy||this.ending.active,encoderBusy:lang=>{const s=d.live.snapshot();return lang==='de'&&s.connected&&(s.observation.streaming!==false||s.observation.reconnecting!==false);},openControls:()=>this.openLegacy(),useOnDesk:occurrence=>this.useManagedService(occurrence)});
     const sender=(event:IpcMainInvokeEvent)=>{
       if(!this.window||event.sender!==this.window.webContents||event.senderFrame!==this.window.webContents.mainFrame||event.senderFrame?.url!=='bcc://app/youtube.html')throw new Error('Untrusted YouTube request.');
@@ -102,7 +114,9 @@ export class YouTubeManager {
   private knownBroadcast(raw:unknown):string{
     const id=identifier(raw);if(!this.broadcasts.some(b=>b.id===id&&b.channelId===this.oauth.channel?.id))throw new YouTubeFailure('Refresh the connected channel and select one of its broadcasts.');return id;
   }
-  get busy():boolean{return this.working||this.management.busy||this.ending.active;}
+  get busy():boolean{return this.working||this.management.busy||this.ending.active||this.deskOutro.starting;}
+  async outroOnDesk():Promise<void>{await this.initialize();if(this.busy)throw new YouTubeFailure('Eine Aktion läuft bereits.');await this.deskOutro.start();this.d.notify();}
+  mainCommand():'main'|'on-air'{const command=this.deskOutro.mainCommand();this.cancel();return command;}
   endState(){return this.ending.snapshot();}
   checkEnd():void{this.ending.check();}
   deskStatus(){return {busy:this.working,error:this.error,notice:this.notice,linked:!!this.controller.links().find(l=>l.serviceId===this.host.selected()&&l.channelId===this.oauth.channel?.id&&l.stage==='ready')};}
@@ -183,7 +197,7 @@ export class YouTubeManager {
   }
   emit():void{this.management?.emit();if(this.window&&!this.window.isDestroyed())this.window.webContents.send('youtube:state',this.panel());}
   cancel():void{
-    this.deskEpoch++;
+    this.deskEpoch++;this.deskOutro.invalidate();
     this.ending.cancel();this.management?.cancel();this.controller.cancel();this.oauth.cancel();if(this.outputOperation)this.d.live.cancelReturn();
     this.notice='Pending YouTube follow-up cancelled. Already completed changes remain; OBS and YouTube were not automatically stopped.';this.checkedAt=null;this.emit();
   }

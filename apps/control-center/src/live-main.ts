@@ -66,7 +66,7 @@ app.whenReady().then(async()=>{
   await credentials.load();
   cues=new DeskCueStore(path.join(app.getPath('userData'),'desk-cues.json'));
   try{await cues.load();}catch{live.release('Das lokale Bibelstellen-Protokoll ist nicht lesbar. Die Datei wurde nicht überschrieben.');}
-  const monitor=new ProgramMonitor(peer,()=>workspace,()=>live.snapshot().observation.program,()=>busy||live.busy);
+  const monitor=new ProgramMonitor(peer,()=>workspace,()=>live.snapshot().observation.program,()=>busy||live.busy,()=>live.ticket());
   ipcMain.handle('live:monitor',async(event,slot)=>{sender(event);return monitor.frame(slot);});
   // Loading saved grants and refreshing tokens is read-only. No Google login opens automatically.
   youtube=new YouTubeManager({workspace:()=>workspace,parent:()=>window,live,peer,journal,exclusive,notify:emit,saveService:async service=>{
@@ -87,6 +87,7 @@ app.whenReady().then(async()=>{
   });
   ipcMain.handle('live:broadcast',async(event,kind)=>{sender(event);if(!youtube)throw new Error('YouTube noch nicht bereit.');await youtube.runDesk(kind);});
   ipcMain.handle('live:schedule-end',async(event,scope)=>{sender(event);if(!youtube)throw new Error('YouTube noch nicht bereit.');await youtube.scheduleEnd(scope);});
+  ipcMain.handle('live:outro',async event=>{sender(event);if(!youtube)throw new Error('Sendepult noch nicht bereit.');await youtube.outroOnDesk();});
   ipcMain.handle('live:cancel-end',event=>{sender(event);youtube?.cancel();emit();});
   ipcMain.handle('live:site',event=>{sender(event);return state();});
   ipcMain.handle('live:snapshot',event=>{sender(event);return live.snapshot();});
@@ -167,7 +168,8 @@ app.whenReady().then(async()=>{
       if(pick.response!==1)return live.snapshot();if(ticket!==live.ticket())throw new LiveFailure('OBS or control state changed during confirmation. Review and try the intended action again.');
     }
     const service=live.snapshot().selectedService,deck=cues!.snapshot(service),entry=deck.entries.find(e=>e.id===deck.selected);
-    await live.command(command as LiveCommand,text(value,500));
+    const actualCommand=command==='main'?youtube?.mainCommand()||'main':command as LiveCommand;
+    await live.command(actualCommand,text(value,500));
     if(command==='bible'&&entry&&entry.reference===text(value,500).trim())await cues!.shown(service,entry.id);
     return live.snapshot();
   });

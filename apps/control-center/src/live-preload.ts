@@ -2,6 +2,7 @@ import {contextBridge,ipcRenderer} from 'electron';
 import type {LiveAppBridge,LiveSiteSnapshot} from './live-app.ts';
 const onSite=(callback:(s:LiveSiteSnapshot)=>void)=>{const listener=(_event:unknown,s:LiveSiteSnapshot)=>callback(s);ipcRenderer.on('live:state',listener);return()=>ipcRenderer.removeListener('live:state',listener);};
 const api:LiveAppBridge={
+  outro:()=>ipcRenderer.invoke('live:outro'),
   broadcast:kind=>ipcRenderer.invoke('live:broadcast',kind),
   scheduleEnd:scope=>ipcRenderer.invoke('live:schedule-end',scope),
   cancelEnd:()=>ipcRenderer.invoke('live:cancel-end'),
