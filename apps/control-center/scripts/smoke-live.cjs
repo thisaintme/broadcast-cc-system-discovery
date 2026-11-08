@@ -74,7 +74,13 @@ async function finish(code,error){if(finished)return;finished=true;clearTimeout(
         assert.deepEqual(peer.state.writes.slice(scheduleWrites).map(x=>x.name),['SetCurrentProgramScene']);
         assert.equal(await evaluate("window.liveService.snapshot().then(s=>s.permissions.scenes)"),true);
 
-        await click('open-bible-panel');await click('add-bible-reference');await click('live-bible');await wait("window.liveService.snapshot().then(s=>s.observation.program==='Bible' && !s.busy)");
+        await click('open-bible-panel');assert.equal(await evaluate("document.getElementById('add-bible-reference').disabled"),true);
+        await field('live-bible-reference','Joh 3, 16');
+        await wait("document.getElementById('bible-reference-preview')?.textContent.includes('Johannes Kap. 3 Vers 16') && !document.getElementById('add-bible-reference').disabled");
+        await click('add-bible-reference');
+        await wait("window.liveService.site().then(s=>s.cues.entries.some(e=>e.reference==='Johannes Kap. 3 Vers 16')&&!s.live.busy)");
+        await wait("!document.getElementById('add-bible-reference') && !document.getElementById('live-bible').disabled");
+        await click('live-bible');await wait("window.liveService.snapshot().then(s=>s.observation.program==='Bible' && !s.busy)");assert.equal(peer.state.settings['Reference text'].text,'Johannes Kap. 3 Vers 16');
         peer.state.program='Outro';peer.emit('CurrentProgramSceneChanged',{sceneName:'Outro'});await wait("window.liveService.snapshot().then(s=>s.returnAt===null)");
         await click('release-live');await wait("window.liveService.snapshot().then(s=>!s.permissions.scenes)");assert.equal(peer.state.streaming,true);
         await click('permission-scenes');await click('permission-audio');await click('permission-stream');await click('enable-live');await wait("window.liveService.snapshot().then(s=>s.permissions.stream && s.permissions.audio)");
@@ -103,7 +109,12 @@ async function finish(code,error){if(finished)return;finished=true;clearTimeout(
         const log=await evaluate('window.liveService.journal()');assert.ok(log.some(x=>x.action==='start'&&x.stage==='completed'));assert.ok(!JSON.stringify(log).includes(peer.password));
         const stored=fs.readFileSync(path.join(dir,'workspace.json'),'utf8');assert.ok(!stored.includes(peer.password));assert.ok(!stored.includes('livePermissions'));
         console.log('Live UI acceptance passed: authenticated join, permissions, actual caption timer/manual mute, live schedule add/remove without extra OBS writes, selected-service protection, persistence, retained unsaved mappings, stale-settings-save protection, external override, start/stop and release.');await finish(0);
-      }catch(error){await finish(1,error);}
+      }catch(error){
+        fs.mkdirSync('release',{recursive:true});
+        fs.writeFileSync('release/smoke-live-failure.png',(await win.webContents.capturePage()).toPNG());
+        console.error('Synthetic UI diagnostics:',await evaluate("window.liveService.site().then(s=>({cues:s.cues,live:s.live,editor:document.getElementById('bible-reference-preview')?.textContent,bibleButton:document.getElementById('live-bible')?.outerHTML,alerts:[...document.querySelectorAll('[role=alert]')].map(e=>e.textContent)}))"));
+        await finish(1,error);
+      }
     });
   });
   require('../dist/live-main.cjs');

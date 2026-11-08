@@ -25,6 +25,23 @@ async function main(){
     assert.equal(await d(`document.querySelector('#nav-live').getAttribute('aria-current')`),'page');
     assert.equal(await d(`document.querySelectorAll('.bcc-rail .desk-sidebar-content').length`),1);
     assert.equal(await d(`!!document.querySelector('#live-prayer')`),true);
+    assert.equal(await d(`document.querySelectorAll('.desk-automation-status').length`),1);
+    assert.equal(await d(`document.querySelectorAll('.desk-return,.bcc-global-return').length`),0);
+    assert.equal(await d(`document.querySelector('#live-prayer svg path').getAttribute('d')`),'M11 3.5c-1.2 1-2 3-2 5.5v5L4 19l3 3 5-5');
+    assert.equal(await d(`typeof window.liveService.outro`),'function');
+    await d(`document.querySelector('#open-bible-panel').click()`);
+    await until(()=>d(`!!document.querySelector('#live-bible-reference')`),'packaged Bible editor');
+    const passage=async value=>{await d(`(()=>{const e=document.getElementById('live-bible-reference');Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set.call(e,${JSON.stringify(value)});e.dispatchEvent(new Event('input',{bubbles:true}));})()`);};
+    await passage('1 Kor 4, 12ff');
+    await until(()=>d(`document.getElementById('bible-reference-preview').textContent.includes('1. Korinther Kap. 4 ab Vers 12')`),'fuzzy Bible interpretation');
+    await d(`document.querySelector('#add-bible-reference').click()`);
+    await until(()=>d(`document.querySelectorAll('.desk-cue-edit').length===1`),'stored editable cue');
+    await d(`document.querySelector('.desk-cue-edit').click()`);
+    await until(()=>d(`!!document.querySelector('#save-bible-reference')`),'packaged edit action');
+    await passage('1 Kor 4, 13ff');
+    await until(()=>d(`document.getElementById('bible-reference-preview').textContent.includes('1. Korinther Kap. 4 ab Vers 13')`),'edited interpretation');
+    await d(`document.querySelector('#save-bible-reference').click()`);
+    await until(()=>d(`window.liveService.site().then(s=>s.cues.entries.length===1&&s.cues.entries[0].reference==='1. Korinther Kap. 4 ab Vers 13')`),'edit saved without duplicate');
     await d(`document.querySelector('#nav-setup').click()`);
     await until(()=>d(`!!document.querySelector('#save-obs-credential') && !!document.querySelector('#connect-saved-obs')`),'packaged credential settings');
     assert.equal(await d(`document.querySelector('#live-obs-password').type`),'password');
@@ -48,7 +65,7 @@ async function main(){
     assert.match(await m(`document.querySelector('.preview').textContent`),/DE: unlisted · RU: unlisted/);
     const rows=await m(`[...document.querySelectorAll('.preview .dates > div')].map(e=>e.textContent)`);assert.equal(new Set(rows).size,8);for(const row of rows){const [date,time]=row.split(' · ');assert.equal(time,'11:00');assert.equal(new Date(date+'T12:00:00Z').getUTCDay(),0);}
     assert.equal(await m(`window.streamManagement.panel().then(p=>p.state.occurrences.length)`),0);
-    console.log('PASS mounted DMG: redesigned German desk → visible YouTube button → both accounts → eight Sundays at 11:00 / sixteen unlisted event previews. Nothing scheduled or transmitted.');
+    console.log('PASS mounted DMG: fixed automation lane, design prayer SVG, immediate Outro API, fuzzy Bible add/edit; redesigned German desk → visible YouTube button → both accounts → eight Sundays at 11:00 / sixteen unlisted event previews. Nothing scheduled or transmitted.');
   }finally{if(!exited)child.kill('SIGTERM');await Promise.race([exit,delay(2000)]);if(!exited){child.kill('SIGKILL');await exit;}await rm(profile,{recursive:true,force:true,maxRetries:4});}
 }
 main().catch(e=>{console.error(e);process.exitCode=1;});

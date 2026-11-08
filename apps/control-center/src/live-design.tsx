@@ -4,7 +4,7 @@ import type {LiveSiteSnapshot} from './live-app.ts';
 import {formatBerlinDate, formatDuration, upcomingService, remainingReturnSeconds} from './live-ui-model.ts';
 
 export type Tone = 'ready' | 'live' | 'progress' | 'warning' | 'error' | 'unknown' | 'offline';
-export type IconName = 'grid' | 'broadcast' | 'calendar' | 'settings' | 'sliders' | 'history' | 'arrow' | 'close' | 'sun' | 'moon' | 'help' | 'check' | 'speaker' | 'book' | 'image' | 'stop' | 'volume' | 'mute' | 'shield';
+export type IconName = 'grid' | 'broadcast' | 'calendar' | 'settings' | 'sliders' | 'history' | 'arrow' | 'close' | 'sun' | 'moon' | 'help' | 'check' | 'speaker' | 'book' | 'image' | 'stop' | 'volume' | 'mute' | 'shield' | 'pray';
 const paths: Record<IconName, ReactNode> = {
   grid: <><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></>,
   broadcast: <><path d="M5 5a10 10 0 0 0 0 14M19 5a10 10 0 0 1 0 14M8 8a6 6 0 0 0 0 8M16 8a6 6 0 0 1 0 8"/><circle cx="12" cy="12" r="1"/><path d="m12 13-3 8m3-8 3 8"/></>,
@@ -23,6 +23,7 @@ const paths: Record<IconName, ReactNode> = {
   stop: <><circle cx="12" cy="12" r="9"/><rect x="8" y="8" width="8" height="8" rx="1"/></>,
   volume: <><path d="m11 4-6 5H2v6h3l6 5zM15 8a5 5 0 0 1 0 8m3-11a9 9 0 0 1 0 14"/></>,
   mute: <><path d="m11 4-6 5H2v6h3l6 5zM16 9l6 6m0-6-6 6"/></>,
+  pray: <g strokeWidth="2"><path d="M11 3.5c-1.2 1-2 3-2 5.5v5L4 19l3 3 5-5"/><path d="M13 3.5c1.2 1 2 3 2 5.5v5l5 5-3 3-5-5"/><path d="M11 3.5 12 3l1 .5"/><path d="M12 4v13"/></g>,
   shield: <><path d="m12 3 8 3v6c0 5-8 9-8 9s-8-4-8-9V6z"/><path d="m8 12 3 3 5-6"/></>,
 };
 export function Icon({name, className = ''}: {name: IconName; className?: string}) {
@@ -36,13 +37,16 @@ const statusLabels: Record<string, [Tone, string]> = {
   STARTING: ['progress', 'OBS wird gestartet'], STOPPING: ['progress', 'OBS wird beendet'],
   RECONNECTING: ['warning', 'OBS verbindet erneut'], UNKNOWN: ['unknown', 'Status unbekannt'],
 };
-export function ControlShell({s, tab, navigate, fresh, status, authorized, release, cancelReturn, now, advanced, sidebar, children}: {
+export function ControlShell({s, tab, navigate, fresh, status, authorized, release, cancelReturn, cancelEnd, returnMain, mainDisabled, now, advanced, sidebar, children}: {
   s: LiveSiteSnapshot; tab: string; navigate: (tab: string) => void; fresh: boolean; status: string;
-  authorized: boolean; release: () => void; cancelReturn: () => void; now: number; advanced: () => void; sidebar?: ReactNode; children: ReactNode;
+  authorized: boolean; release: () => void; cancelReturn: () => void; cancelEnd: () => void; returnMain: () => void; mainDisabled:boolean; now: number; advanced: () => void; sidebar?: ReactNode; children: ReactNode;
 }) {
   const [theme, setTheme] = useState<'dark' | 'light'>(() => {try {return localStorage.getItem('bcc-ui-theme') === 'light' ? 'light' : 'dark';} catch {return 'dark';}});
   useEffect(() => {document.documentElement.dataset.theme = theme; try {localStorage.setItem('bcc-ui-theme', theme);} catch {/* Appearance must not depend on storage. */}}, [theme]);
   const [tone, label] = statusLabels[status] || statusLabels.UNKNOWN;
+  const end=s.end,ending=end?.status==='countdown'||end?.status==='ending',returning=s.live.returnAt!==null;
+  const seconds=ending?Math.max(0,Math.ceil(((end?.until||now)-now)/1000)):(remainingReturnSeconds(s.live.returnAt,now)??0);
+  const automation=ending?(end?.status==='countdown'?`${end.scope==='both'?'DE + RU':end.scope?.toUpperCase()} endet in ${seconds} s`:'Abschluss wird bestätigt …'):returning?(fresh?`Zurück zum Hauptbild in ${seconds} s`:'Rückkehr nicht bestätigt · OBS prüfen'):end?.status==='failed'?end.message:end?.status==='completed'?end.message:'Sprecher, Bibelstelle und Gebet: 15 s, dann Hauptbild. Outro: DE endet nach 15 s.';
   const o = s.live.observation;
   const navigation: [string, string, IconName][] = [['live', 'Sendung', 'broadcast'], ['schedule', 'Termine', 'calendar'], ['setup', 'Einstellungen', 'settings']];
   const navButton = ([id, text, icon]: [string, string, IconName]) => <button key={id} id={`nav-${id}`} type="button" className={tab === id ? 'active' : ''} aria-current={tab === id ? 'page' : undefined} aria-label={text} title={text} onClick={() => navigate(id)}><Icon name={icon}/><span>{text}</span></button>;
@@ -61,7 +65,7 @@ export function ControlShell({s, tab, navigate, fresh, status, authorized, relea
       {tab !== 'live' && <button className="bcc-back-live" type="button" onClick={() => navigate('live')}>Zur Live-Steuerung <Icon name="arrow"/></button>}
       <button id="release-live" className="bcc-release" type="button" onClick={release} title="Gibt nur die App-Steuerung frei. OBS und eine laufende Übertragung bleiben unverändert."><Icon name="shield"/><span>Steuerung abgeben</span></button>
     </header>
-    <main id="bcc-content" data-tab={tab} className="bcc-main" tabIndex={-1}>{s.live.returnAt!==null&&<section className="bcc-global-return" aria-label="Automatische Rückkehr"><span role="status">{fresh?`Zurück zum Hauptbild in ${remainingReturnSeconds(s.live.returnAt,now)} s`:'Rückkehr nicht bestätigt · OBS prüfen'}</span><button id="cancel-live-return" type="button" onClick={cancelReturn}>Automatische Rückkehr abbrechen</button></section>}{children}<footer className="bcc-footer"><span>OBS und Geräte bleiben manuell bedienbar.</span><span id="live-mode" data-authorized={authorized}>{authorized ? 'Live-Steuerung aktiv' : 'Nur beobachten'}</span></footer></main>
+    <main id="bcc-content" data-tab={tab} className="bcc-main" tabIndex={-1}><section className="desk-automation-status" data-active={ending||returning} data-failed={end?.status==='failed'&&!returning} aria-label="Szenen-Automatik"><div className="desk-automation-text" role="status" title={automation}>{automation}</div><div className="desk-automation-actions">{(ending||returning)&&<button id="return-main-now" type="button" disabled={mainDisabled} onClick={returnMain}>Hauptbild · {ending?'Ende abbrechen':'sofort zurück'}</button>}{returning&&!ending&&<button id="cancel-live-return" type="button" onClick={cancelReturn}>Rückkehr abbrechen</button>}{ending&&<button id="cancel-broadcast-end" type="button" onClick={cancelEnd}>Ende abbrechen</button>}</div><div className="desk-automation-progress" aria-hidden="true" style={{transform:`scaleX(${ending||returning?Math.max(0,Math.min(1,seconds/15)):0})`}}/></section>{children}<footer className="bcc-footer"><span>OBS und Geräte bleiben manuell bedienbar.</span><span id="live-mode" data-authorized={authorized}>{authorized ? 'Live-Steuerung aktiv' : 'Nur beobachten'}</span></footer></main>
   </div>;
 }
 export function ChannelReadout({s, fresh, status, openPlanning}: {openPlanning: () => void; s: LiveSiteSnapshot; fresh: boolean; status: string}) {

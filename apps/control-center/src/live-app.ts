@@ -8,6 +8,7 @@ import type {ServiceChange} from './live-schedule.ts';
 import type {OperatorQuery,OperatorView} from './obs-operator.ts';
 export interface LiveSiteSnapshot{version:string;workspace:Workspace;credentials?:ObsCredentialStatus;end?:EndState;broadcast?:{busy:boolean;error:string;notice:string;linked:boolean};cues?:DeskCues;live:LiveSnapshot;companionResult:string}
 export interface LiveAppBridge extends LiveBridge{
+  outro():Promise<void>;
   broadcast(kind:'start'|'publish-intro'):Promise<void>;
   scheduleEnd(scope:EndScope):Promise<void>;
   cancelEnd():Promise<void>;

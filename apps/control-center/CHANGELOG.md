@@ -1,3 +1,10 @@
+# 0.3.0-alpha.7
+
+- Merge the tested redesign into main and refine scene interactions.
+- One stable countdown lane; faster bounded previews; fuzzy, editable Bible references.
+- Immediate Outro with a cancellable 15-second DE end, Main/audio recovery, and guarded YouTube completion.
+- Exact Claude praying-hands icon. Native and mounted-DMG regression coverage.
+
 # Preview changelog
 
 ## 0.2.0-alpha.3
