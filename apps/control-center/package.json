@@ -43,6 +43,7 @@
     },
     "mac": {
       "category": "public.app-category.utilities",
+      "x64ArchFiles": "**/node_modules/@julusian/freetype2/prebuilds/freetype2-darwin-{arm64,x64}/node-napi-v7.node",
       "target": [
         {
           "target": "dmg",

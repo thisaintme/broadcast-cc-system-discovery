@@ -2,18 +2,29 @@
 // CI only: drive the executable inside the verified DMG, not the checkout.
 // Use a disposable Chromium profile and never press Review and create on YouTube.
 const assert=require('node:assert/strict');
-const {spawn}=require('node:child_process');
+const {spawn,execFileSync}=require('node:child_process');
 const {mkdtemp,rm}=require('node:fs/promises');
 const {tmpdir}=require('node:os');
-const {join}=require('node:path');
+const {join,dirname}=require('node:path');
 const {createServer}=require('node:net');
 const {setTimeout:delay}=require('node:timers/promises');
 const WS=require('ws');
 async function freePort(){const s=createServer();await new Promise((ok,no)=>{s.once('error',no);s.listen(0,'127.0.0.1',ok);});const port=s.address().port;await new Promise(ok=>s.close(ok));return port;}
 async function until(fn,label){const end=Date.now()+25000;while(Date.now()<end){const result=await fn();if(result)return result;await delay(150);}throw Error('Timed out: '+label);}
 function evaluate(target,expression){return new Promise((ok,no)=>{const ws=new WS(target.webSocketDebuggerUrl,{handshakeTimeout:4000});const timer=setTimeout(()=>{ws.terminate();no(Error('Renderer timed out'));},5000);const done=(fn,value)=>{clearTimeout(timer);ws.terminate();fn(value);};ws.once('error',e=>done(no,e));ws.once('open',()=>ws.send(JSON.stringify({id:1,method:'Runtime.evaluate',params:{expression,awaitPromise:true,returnByValue:true}})));ws.on('message',data=>{const r=JSON.parse(data);if(r.id!==1)return;if(r.error||r.result.exceptionDetails)return done(no,Error(r.error?.message||r.result.exceptionDetails?.exception?.description||'Renderer exception'));done(ok,r.result.result.value);});});}
+function verifyNativePrebuilds(binary){
+  // FreeType distributes both CPU variants in every package. They must remain
+  // in separate arch-labelled directories, not be merged or dropped as duplicates.
+  const root=join(dirname(binary),'..','Resources','app.asar.unpacked','node_modules','@julusian','freetype2','prebuilds');
+  for(const [directory,architecture] of [['arm64','arm64'],['x64','x86_64']]){
+    const file=join(root,'freetype2-darwin-'+directory,'node-napi-v7.node');
+    const actual=execFileSync('/usr/bin/lipo',['-archs',file],{encoding:'utf8'}).trim().split(/\s+/);
+    assert.ok(actual.includes(architecture),`Packaged ${directory} FreeType prebuild lacks ${architecture}: ${actual.join(' ')}`);
+  }
+  console.log('PASS mounted DMG native dependencies: FreeType arm64 and x86_64 prebuilds both present with the correct architecture.');
+}
 async function main(){
-  const binary=process.argv[2];assert.ok(binary?.startsWith('/'));const port=await freePort();const profile=await mkdtemp(join(tmpdir(),'bcc-mounted-'));
+  const binary=process.argv[2];assert.ok(binary?.startsWith('/'));verifyNativePrebuilds(binary);const port=await freePort();const profile=await mkdtemp(join(tmpdir(),'bcc-mounted-'));
   const child=spawn(binary,[`--user-data-dir=${profile}`,'--remote-debugging-address=127.0.0.1',`--remote-debugging-port=${port}`],{stdio:'ignore'});
   let exited=false;const exit=new Promise(ok=>{child.once('error',()=>{exited=true;ok();});child.once('exit',()=>{exited=true;ok();});});
   async function page(file){return until(async()=>{if(exited)throw Error('Packaged app exited');let pages=[];try{pages=await(await fetch(`http://127.0.0.1:${port}/json/list`,{signal:AbortSignal.timeout(1000)})).json();}catch{}return pages.find(t=>t.type==='page'&&t.url===`bcc://app/${file}.html`);},file);}
