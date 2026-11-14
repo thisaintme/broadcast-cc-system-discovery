@@ -1,3 +1,4 @@
+import {allowLiveFullscreen} from './live-window-permissions.ts';
 import {SCENE_LABELS} from './v107-model.ts';
 import {ObsCredentialVault} from './obs-credentials.ts';
 import {YouTubeSecretFile} from './youtube-storage.ts';
@@ -60,7 +61,10 @@ app.whenReady().then(async()=>{
     const body=await readFile(path.join(__dirname,'renderer',url.pathname.slice(1)));
     return new Response(new Uint8Array(body),{headers:{'Content-Type':types[url.pathname]}});
   });
-  session.defaultSession.setPermissionRequestHandler((_w,_p,callback)=>callback(false));session.defaultSession.setPermissionCheckHandler(()=>false);
+  // Allow only user-initiated document fullscreen in this exact top-level desk.
+  // Media, clipboard, external navigation and every other permission stay denied.
+  session.defaultSession.setPermissionRequestHandler((requester,permission,callback,details)=>callback(allowLiveFullscreen(permission,requester,window?.webContents??null,details)));
+  session.defaultSession.setPermissionCheckHandler((requester,permission,_origin,details)=>allowLiveFullscreen(permission,requester,window?.webContents??null,details));
   try{workspace=await loadWorkspace(store());}catch{live.release('Saved workspace could not be read. It has not been overwritten; import a valid workspace.');}
   const encrypted=()=>safeStorage.isEncryptionAvailable()&&(process.platform!=='linux'||safeStorage.getSelectedStorageBackend()!=='basic_text');
   credentials=new ObsCredentialVault(new YouTubeSecretFile(path.join(app.getPath('userData'),'credentials','obs.enc'),{available:encrypted,encrypt:v=>safeStorage.encryptString(v),decrypt:v=>safeStorage.decryptString(v)}),encrypted);
