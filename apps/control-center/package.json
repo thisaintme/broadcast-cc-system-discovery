@@ -33,7 +33,13 @@
   "build": {
     "appId": "org.broadcastcc.controlcenter.preview",
     "productName": "Broadcast Control Center Preview",
-    "asar": true,
+    "asar": {
+      "smartUnpack": false
+    },
+    "asarUnpack": [
+      "**/*.node",
+      "**/*.dylib"
+    ],
     "files": [
       "dist/**/*",
       "package.json"
