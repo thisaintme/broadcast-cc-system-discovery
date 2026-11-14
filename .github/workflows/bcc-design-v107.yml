@@ -1,0 +1,50 @@
+name: BCC V107 validation
+on:
+  push:
+    branches: ['feat/bcc-design-v107']
+    paths: ['apps/control-center/**', '.github/workflows/bcc-design-v107.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: bcc-v107-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: apps/control-center
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - name: Install locked dependencies
+        run: npm ci --no-audit --no-fund
+      - name: Preserve reproducible offline toolchain
+        run: tar --exclude='node_modules/electron/dist' -czf "$RUNNER_TEMP/bcc-v107-toolchain.tar.gz" node_modules
+      - uses: actions/upload-artifact@v4
+        with:
+          name: bcc-v107-toolchain
+          path: ${{ runner.temp }}/bcc-v107-toolchain.tar.gz
+          retention-days: 3
+      - name: Typecheck and bundle
+        run: npm run typecheck && npm run build
+      - name: Regression tests
+        run: npm test
+      - name: V107 native acceptance
+        run: |
+          if test -f scripts/smoke-v107.cjs; then
+            xvfb-run -a ./node_modules/.bin/electron --no-sandbox scripts/smoke-v107.cjs
+          fi
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: bcc-v107-validation
+          path: apps/control-center/release/v107/**
+          if-no-files-found: ignore
+          retention-days: 14
