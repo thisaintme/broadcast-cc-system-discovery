@@ -25,12 +25,16 @@ jobs:
           node-version: '24'
       - name: Install locked dependencies
         run: npm ci --no-audit --no-fund
-      - name: Preserve reproducible offline toolchain
-        run: tar --exclude='node_modules/electron/dist' -czf "$RUNNER_TEMP/bcc-v107-toolchain.tar.gz" node_modules
+      - name: Preserve reproducible offline toolchain and source
+        run: |
+          tar --exclude='node_modules/electron/dist' -czf "$RUNNER_TEMP/bcc-v107-toolchain.tar.gz" node_modules
+          git archive --format=tar.gz --output="$RUNNER_TEMP/bcc-v107-source.tar.gz" HEAD
       - uses: actions/upload-artifact@v4
         with:
           name: bcc-v107-toolchain
-          path: ${{ runner.temp }}/bcc-v107-toolchain.tar.gz
+          path: |
+            ${{ runner.temp }}/bcc-v107-toolchain.tar.gz
+            ${{ runner.temp }}/bcc-v107-source.tar.gz
           retention-days: 3
       - name: Typecheck and bundle
         run: npm run typecheck && npm run build
