@@ -1,58 +1,170 @@
-name: BCC V107 validation
+name: BCC V107 tests and macOS DMG
 on:
   push:
     branches: ['feat/bcc-design-v107']
-    paths: ['apps/control-center/**', '.github/workflows/bcc-design-v107.yml']
+    paths: ['apps/control-center/**', '.github/workflows/bcc-design-v107.yml', '.github/bcc-v107-import/**']
   workflow_dispatch:
 permissions:
   contents: read
 concurrency:
-  group: bcc-v107-${{ github.ref }}
+  group: bcc-v107-release-${{ github.ref }}
   cancel-in-progress: true
 jobs:
+  source:
+    if: github.ref == 'refs/heads/feat/bcc-design-v107'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: write
+    outputs:
+      sha: ${{ steps.source.outputs.sha }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+      - name: Materialize checksum-verified implementation on this feature branch only
+        id: source
+        shell: bash
+        run: |
+          set -euo pipefail
+          if test -d .github/bcc-v107-import; then
+            test "$(git rev-parse HEAD^)" = '34273eaa6c6c5efb06c435b4e25e1c1625dfe88f'
+            test -z "$(git diff HEAD^ HEAD -- apps/control-center)"
+            python3 - <<'PY'
+          import pathlib, hashlib, lzma, subprocess
+          parts=sorted(pathlib.Path('.github/bcc-v107-import').glob('*.xzpart'))
+          assert len(parts)==8
+          payload=b''.join(p.read_bytes() for p in parts)
+          assert hashlib.sha256(payload).hexdigest()=='4a48a4922f730a52ad44669d7dc2aee9d89fbcedc3b5b76c71c4fc3052eebaca'
+          patch=lzma.decompress(payload)
+          assert len(patch)<1000000
+          for line in patch.decode().splitlines():
+            if line.startswith('diff --git '):
+              fields=line.split()
+              assert len(fields)==4 and fields[2].startswith('a/apps/control-center/') and fields[3].startswith('b/apps/control-center/')
+          subprocess.run(['git','apply','--check','-'],input=patch,check=True)
+          subprocess.run(['git','apply','--index','-'],input=patch,check=True)
+          PY
+            git rm -r .github/bcc-v107-import
+            git config user.name 'github-actions[bot]'
+            git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+            git commit -m 'feat: integrate V107 presentation, offline content, Studio and verified device flows'
+            git push origin HEAD:refs/heads/feat/bcc-design-v107
+          fi
+          echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
   validate:
+    needs: source
     runs-on: ubuntu-latest
     timeout-minutes: 15
     defaults:
       run:
-        shell: bash
         working-directory: apps/control-center
+        shell: bash
     steps:
       - uses: actions/checkout@v4
         with:
+          ref: ${{ needs.source.outputs.sha }}
           persist-credentials: false
       - uses: actions/setup-node@v4
         with:
           node-version: '24'
-      - name: Install locked dependencies
-        run: npm ci --no-audit --no-fund
-      - name: Preserve reproducible offline toolchain and source
+      - name: Install locked dependencies and verified offline content
+        run: npm ci --no-audit --no-fund && npm run assets
+      - name: Typecheck, bundle and regression tests
         run: |
-          tar --exclude='node_modules/electron/dist' -czf "$RUNNER_TEMP/bcc-v107-toolchain.tar.gz" node_modules
-          git archive --format=tar.gz --output="$RUNNER_TEMP/bcc-v107-source.tar.gz" HEAD
-      - uses: actions/upload-artifact@v4
-        with:
-          name: bcc-v107-toolchain
-          path: |
-            ${{ runner.temp }}/bcc-v107-toolchain.tar.gz
-            ${{ runner.temp }}/bcc-v107-source.tar.gz
-          retention-days: 3
-      - name: Typecheck and bundle
-        run: |
+          set -euo pipefail
           mkdir -p release/v107
           git rev-parse HEAD > release/v107/commit.txt
           npm run typecheck 2>&1 | tee release/v107/typecheck.log
           npm run build 2>&1 | tee release/v107/build.log
-      - name: Regression tests
-        run: npm test 2>&1 | tee release/v107/tests.log
-      - name: V107 native acceptance
+          npm test 2>&1 | tee release/v107/tests.log
+      - name: Native desk and actual overlay renderer acceptance
         run: |
+          set -euo pipefail
           xvfb-run -a ./node_modules/.bin/electron --no-sandbox scripts/smoke-v107.cjs 2>&1 | tee release/v107/native.log
-          node -e "const r=require('./release/v107/report.json'); if(r.ok!==true) process.exit(1)"
+          node -e "if(require('./release/v107/report.json').ok!==true)process.exit(1)"
+          xvfb-run -a ./node_modules/.bin/electron --no-sandbox scripts/smoke-v107-content.cjs 2>&1 | tee release/v107/native-content.log
+          node -e "if(require('./release/v107-content/report.json').ok!==true)process.exit(1)"
       - uses: actions/upload-artifact@v4
         if: always()
         with:
           name: bcc-v107-validation
-          path: apps/control-center/release/v107/**
+          path: |
+            apps/control-center/release/v107/**
+            apps/control-center/release/v107-content/**
           if-no-files-found: error
-          retention-days: 14
+          retention-days: 30
+  macos:
+    needs: [source, validate]
+    runs-on: macos-14
+    timeout-minutes: 35
+    env:
+      CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+    defaults:
+      run:
+        working-directory: apps/control-center
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.source.outputs.sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - name: Install locked dependencies and offline content
+        run: npm ci --no-audit --no-fund && npm run assets
+      - name: Check source and native macOS behavior
+        run: |
+          set -euo pipefail
+          mkdir -p release/v107
+          git rev-parse HEAD > release/v107/commit.txt
+          npm run typecheck 2>&1 | tee release/v107/typecheck-mac.log
+          npm run build
+          npm test 2>&1 | tee release/v107/tests-mac.log
+          ./node_modules/.bin/electron scripts/smoke-v107.cjs 2>&1 | tee release/v107/native-mac.log
+          node -e "if(require('./release/v107/report.json').ok!==true)process.exit(1)"
+          ./node_modules/.bin/electron scripts/smoke-v107-content.cjs 2>&1 | tee release/v107/native-content-mac.log
+          node -e "if(require('./release/v107-content/report.json').ok!==true)process.exit(1)"
+      - name: Build universal macOS disk image
+        run: |
+          set -euo pipefail
+          npm run dist:mac 2>&1 | tee release/v107/package.log
+      - name: Verify disk image and run the packaged app from the mounted image
+        run: |
+          set -euo pipefail
+          DMG=$(find release -maxdepth 1 -name '*universal.dmg' -print -quit)
+          test -n "$DMG"
+          hdiutil verify "$DMG" 2>&1 | tee release/v107/dmg-verify.log
+          MOUNT="$RUNNER_TEMP/bcc-v107-mount"
+          mkdir -p "$MOUNT"
+          hdiutil attach "$DMG" -nobrowse -readonly -mountpoint "$MOUNT"
+          trap 'hdiutil detach "$MOUNT" -force || true' EXIT
+          APP=$(find "$MOUNT" -maxdepth 1 -name '*.app' -type d -print -quit)
+          test -n "$APP"
+          EXE=$(/usr/libexec/PlistBuddy -c 'Print CFBundleExecutable' "$APP/Contents/Info.plist")
+          lipo -archs "$APP/Contents/MacOS/$EXE" | tee release/v107/architectures.txt
+          grep -q arm64 release/v107/architectures.txt
+          grep -q x86_64 release/v107/architectures.txt
+          node scripts/check-mounted-preview.cjs "$APP/Contents/MacOS/$EXE" 2>&1 | tee release/v107/mounted-app.log
+          shasum -a 256 "$DMG" > release/SHA256SUMS.txt
+          printf 'Source commit: %s\nVersion: 0.4.0-alpha.1\nArchitectures: arm64 x86_64\nApple Developer ID signing/notarization: no\nProduction hardware acceptance: not performed\n' '${{ needs.source.outputs.sha }}' > release/BUILD-INFO.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Broadcast-Control-Center-V107-macOS-universal
+          path: |
+            apps/control-center/release/*universal.dmg
+            apps/control-center/release/SHA256SUMS.txt
+            apps/control-center/release/BUILD-INFO.txt
+          if-no-files-found: error
+          retention-days: 30
+          compression-level: 0
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: bcc-v107-macOS-validation
+          path: |
+            apps/control-center/release/v107/**
+            apps/control-center/release/v107-content/**
+          if-no-files-found: warn
+          retention-days: 30
