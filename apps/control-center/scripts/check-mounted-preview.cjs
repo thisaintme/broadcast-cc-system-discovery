@@ -44,7 +44,10 @@ async function main(){
     assert.equal(await d(`document.querySelector('#live-obs-password').type`),'password');
     await d(`document.querySelector('#nav-schedule').click()`);
     await until(()=>d(`document.body.innerText.includes('Sendereihe')`),'packaged reusable series screen');
-    await d(`document.querySelector('#nav-youtube').click()`);
+    // V107 exposes YouTube management through the single visible tools-menu path.
+    await d(`document.querySelector('button[aria-controls="v107-tools"]').click()`);
+    await until(()=>d(`!![...document.querySelectorAll('#v107-tools button')].find(b=>b.textContent==='YouTube-Verwaltung öffnen'&&b.getClientRects().length>0)`),'visible YouTube tools-menu action');
+    await d(`[...document.querySelectorAll('#v107-tools button')].find(b=>b.textContent==='YouTube-Verwaltung öffnen').click()`);
     const manage=await page('stream-management');const m=expr=>evaluate(manage,expr);
     const tab=async label=>{await until(()=>m(`!![...document.querySelectorAll('nav button')].find(b=>b.textContent===${JSON.stringify(label)})`),'tab '+label);await m(`[...document.querySelectorAll('nav button')].find(b=>b.textContent===${JSON.stringify(label)}).click()`);await until(()=>m(`document.querySelector('nav button[aria-current=page]')?.textContent===${JSON.stringify(label)}`),label);};
     await tab('Accounts');assert.match(await m('document.body.innerText'),/German · OBS/);assert.match(await m('document.body.innerText'),/Russian · Web Presenter/);
@@ -62,7 +65,7 @@ async function main(){
     assert.match(await m(`document.querySelector('.preview').textContent`),/DE: unlisted · RU: unlisted/);
     const rows=await m(`[...document.querySelectorAll('.preview .dates > div')].map(e=>e.textContent)`);assert.equal(new Set(rows).size,8);for(const row of rows){const [date,time]=row.split(' · ');assert.equal(time,'11:00');assert.equal(new Date(date+'T12:00:00Z').getUTCDay(),0);}
     assert.equal(await m(`window.streamManagement.panel().then(p=>p.state.occurrences.length)`),0);
-    console.log('PASS mounted DMG: V107 desk, offline Bible, local fonts → visible YouTube button → both accounts → eight Sundays at 11:00 / sixteen unlisted event previews. Nothing scheduled or transmitted.');
+    console.log('PASS mounted DMG: V107 desk, offline Bible, local fonts → visible YouTube tools menu → both accounts → eight Sundays at 11:00 / sixteen unlisted event previews. Nothing scheduled or transmitted.');
   }finally{if(!exited)child.kill('SIGTERM');await Promise.race([exit,delay(2000)]);if(!exited){child.kill('SIGKILL');await exit;}await rm(profile,{recursive:true,force:true,maxRetries:4});}
 }
 main().catch(e=>{console.error(e);process.exitCode=1;});
