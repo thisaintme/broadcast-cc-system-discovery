@@ -33,7 +33,8 @@ async function finish(code,error){
   win.webContents.once('did-finish-load',async()=>{
    const ev=code=>win.webContents.executeJavaScript(code,true);
    const wait=async(code,ms=12000)=>{const end=Date.now()+ms;while(Date.now()<end){if(await ev(code))return;await new Promise(r=>setTimeout(r,40));}throw Error('Timed out: '+code);};
-   const click=async id=>{await ev(`document.getElementById(${JSON.stringify(id)}).click()`);};
+   const ready=async selector=>{await wait(`(()=>{const e=document.querySelector(${JSON.stringify(selector)});return !!e&&!e.disabled;})()`);};
+   const click=async id=>{await ready('#'+id);await ev(`document.getElementById(${JSON.stringify(id)}).click()`);};
    const field=async(id,value)=>{await ev(`(()=>{const e=document.getElementById(${JSON.stringify(id)});e.focus();Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set.call(e,${JSON.stringify(value)});e.dispatchEvent(new Event('input',{bubbles:true}));})()`);};
    const capture=async name=>{fs.writeFileSync(path.join(out,name+'.png'),(await win.webContents.capturePage()).toPNG());};
    try{
@@ -78,6 +79,7 @@ async function finish(code,error){
     await ev(`document.querySelector('#v107-reference').closest('form').requestSubmit()`);
     await wait(`window.liveService.site().then(s=>!s.live.busy&&s.cues.entries.length===1)`);
     assert.equal(peer.state.writes.length,before);
+    await ready('.v107-cue button[aria-label$="bearbeiten"]');
     await ev(`document.querySelector('.v107-cue button[aria-label$="bearbeiten"]').click()`);
     await wait(`!!document.getElementById('v107-edit-reference')`);
     await field('v107-edit-reference','Joh 3,16-18');
@@ -92,7 +94,7 @@ async function finish(code,error){
     passed.push('shorthand preview; edit/save is local; typing shortcuts inert; queue advances only after confirmed caption');
     await click('v107-scene-main');await wait(`window.liveService.site().then(s=>!s.live.busy&&s.live.observation.program==='Main')`);
     const writes=peer.state.writes.length;await click('v107-scene-outro');
-    await wait(`window.liveService.site().then(s=>!s.live.busy)`);assert.equal(peer.state.writes.length,writes);
+    await ready('#v107-scene-outro');assert.equal(peer.state.writes.length,writes);
     passed.push('cancelled native Outro confirmation leaves output untouched');
     await click('v107-fullscreen');await wait(`!!document.fullscreenElement`);
     assert.equal(await ev(`document.querySelectorAll('#v107-audio').length`),1);

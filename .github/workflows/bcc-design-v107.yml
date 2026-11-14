@@ -15,6 +15,7 @@ jobs:
     timeout-minutes: 15
     defaults:
       run:
+        shell: bash
         working-directory: apps/control-center
     steps:
       - uses: actions/checkout@v4
@@ -37,18 +38,21 @@ jobs:
             ${{ runner.temp }}/bcc-v107-source.tar.gz
           retention-days: 3
       - name: Typecheck and bundle
-        run: npm run typecheck && npm run build
+        run: |
+          mkdir -p release/v107
+          git rev-parse HEAD > release/v107/commit.txt
+          npm run typecheck 2>&1 | tee release/v107/typecheck.log
+          npm run build 2>&1 | tee release/v107/build.log
       - name: Regression tests
-        run: npm test
+        run: npm test 2>&1 | tee release/v107/tests.log
       - name: V107 native acceptance
         run: |
-          if test -f scripts/smoke-v107.cjs; then
-            xvfb-run -a ./node_modules/.bin/electron --no-sandbox scripts/smoke-v107.cjs
-          fi
+          xvfb-run -a ./node_modules/.bin/electron --no-sandbox scripts/smoke-v107.cjs 2>&1 | tee release/v107/native.log
+          node -e "const r=require('./release/v107/report.json'); if(r.ok!==true) process.exit(1)"
       - uses: actions/upload-artifact@v4
         if: always()
         with:
           name: bcc-v107-validation
           path: apps/control-center/release/v107/**
-          if-no-files-found: ignore
+          if-no-files-found: error
           retention-days: 14
