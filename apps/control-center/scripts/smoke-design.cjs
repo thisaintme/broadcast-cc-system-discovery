@@ -4,7 +4,7 @@ const fs=require('node:fs'),path=require('node:path'),os=require('node:os'),asse
 const {start}=require('../tests/mock-live.cjs');
 const dir=fs.mkdtempSync(path.join(os.tmpdir(),'bcc-design-smoke-'));app.setPath('userData',dir);
 let peer,finished=false;
-dialog.showMessageBox=async(_window,options)=>({response:options.message==='Enable live control of this OBS session?'?1:0});
+dialog.showMessageBox=async(_window,options)=>({response:options.message==='Steuerung für diese OBS-Sitzung freigeben?'?1:0});
 const timer=setTimeout(()=>finish(1,new Error('Design UI test timed out')),90000);
 async function finish(code,error){if(finished)return;finished=true;clearTimeout(timer);if(error)console.error(error);if(peer)await peer.close();try{fs.rmSync(dir,{recursive:true,force:true});}catch{}app.exit(code);}
 (async()=>{

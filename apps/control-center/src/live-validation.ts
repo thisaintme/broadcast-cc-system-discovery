@@ -1,4 +1,4 @@
-import type {Reader,Role,SceneNode,Workspace} from './model.ts';
+import type {Reader,Role,DeskRole,SceneNode,Workspace} from './model.ts';
 import {readCaptionGraph,manualTextSettings,isCaptionKind} from './offline.ts';
 import {LiveFailure,LIVE_COMMANDS} from './live-contract.ts';
 import type {LiveCommand,LiveObservation,LivePermissions} from './live-contract.ts';
@@ -10,7 +10,7 @@ export function enabledPaths(nodes:SceneNode[],root:string,target:string):number
   };return walk(root,[]);
 }
 function activeTrail(name:string,trail:string[]):string[]{return [...trail,name];}
-export async function requireScene(reader:Reader,w:Workspace,role:Role|'prayer'):Promise<string>{
+export async function requireScene(reader:Reader,w:Workspace,role:DeskRole):Promise<string>{
   const name=w.bindings.scenes[role],list=await reader.read('GetSceneList');
   if(!name||!Array.isArray(list.scenes)||!list.scenes.some((s:any)=>s.sceneName===name))throw new LiveFailure(`Map an existing ${role} scene in Connections & mappings.`);
   return name;
@@ -46,8 +46,8 @@ export async function requireAudio(reader:Reader,w:Workspace):Promise<boolean>{
   if(typeof r.inputMuted!=='boolean')throw new LiveFailure('OBS did not report a valid mute state.');return r.inputMuted;
 }
 export const commandPermissions=(c:LiveCommand):LivePermissions=>({
-  scenes:['prepare','intro','start','on-air','main','speaker','bible','prayer','outro'].includes(c),
-  audio:['intro','start','on-air','outro','mute','unmute'].includes(c),stream:c==='start'||c==='stop',...(c==='operator'?{operator:true}:{}),
+  scenes:['prepare','intro','start','on-air','main','speaker','bible','prayer','outro','intro-scene','prayer-scene','chapter','interlude','singing','remote'].includes(c),
+  audio:['intro','intro-scene','start','on-air','outro','mute','unmute'].includes(c),stream:c==='start'||c==='stop',...(c==='operator'?{operator:true}:{}),
 });
 /** Missing features block their own actions, not unrelated mapped functions. */
 export function blockedActions(w:Workspace,o:LiveObservation,p:LivePermissions,connected:boolean,busy:boolean,serviceId:string,now:number,journalError=''):Record<LiveCommand,string[]>{
@@ -56,12 +56,13 @@ export function blockedActions(w:Workspace,o:LiveObservation,p:LivePermissions,c
     if(busy)reasons.push('An action is in progress. Release control remains available.');
     if(!connected)reasons.push('Connect & inspect OBS.');
     if(o.checkedAt===null||now-o.checkedAt>=6000||!o.collection||!o.profile||!o.program||o.streaming===null)reasons.push('Wait for confirmed OBS status; unknown is not off.');
+    if(c!=='stop'&&o.reconnecting!==false)reasons.push('Die OBS-Verbindung ist nicht stabil bestätigt.');
     if(journalError)reasons.push(journalError);
     if(need.scenes&&!p.scenes)reasons.push('Enable Scenes and captions permission.');
     if(need.audio&&!p.audio)reasons.push('Enable Service audio permission.');
     if(need.stream&&!p.stream)reasons.push('Enable OBS start/stop permission.');
     if(need.operator&&!p.operator)reasons.push('Enable OBS operator desk permission on Live Service.');
-    const role:Role|'prayer'|undefined=c==='start'||c==='prepare'?'intro':c==='on-air'?'main':['intro','main','speaker','bible','prayer','outro'].includes(c)?c as Role:undefined;
+    const role:DeskRole|undefined=c==='start'||c==='prepare'||c==='intro-scene'?'intro':c==='prayer-scene'?'prayer':c==='on-air'?'main':['intro','main','speaker','bible','prayer','outro','chapter','interlude','singing','remote'].includes(c)?c as DeskRole:undefined;
     if(role&&(!w.bindings.scenes[role]||!o.scenes.includes(w.bindings.scenes[role])))reasons.push(`Map the ${role} scene.`);
     if((c==='speaker'||c==='bible'||c==='prayer')&&!o.scenes.includes(w.bindings.scenes.main))reasons.push('Map Main for the timed return.');
     if(c==='speaker'&&(!w.captions.speakerGroup||!w.captions.speakerPool.length))reasons.push('Review the speaker-name group and pool in setup.');

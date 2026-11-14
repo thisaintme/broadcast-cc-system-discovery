@@ -2,7 +2,8 @@
 import type {AudioObservation,AudioSnapshot} from './audio-model.ts';
 import type {ServiceAudioIntent,ServiceAudioStatus} from './service-audio.ts';
 export const ROLES = ['intro', 'main', 'speaker', 'bible', 'outro'] as const;
-export const DESK_ROLES = ['intro', 'main', 'speaker', 'bible', 'prayer', 'outro'] as const;
+export const DESK_ROLES = ['intro', 'main', 'speaker', 'bible', 'chapter', 'interlude', 'singing', 'prayer', 'remote', 'outro'] as const;
+export type DeskRole = typeof DESK_ROLES[number];
 export type Role = typeof ROLES[number];
 export type Phase = 'idle' | 'prepared' | Role;
 export type Mode = 'simulation' | 'obs-preview' | 'offline-program';
@@ -16,7 +17,7 @@ export interface Inventory {
 }
 export interface Connection { label:string; module:string; version:string; host:string; port?:number; enabled:boolean; health:'unknown' }
 export interface Bindings {
-  scenes:Record<Role,string>&{prayer?:string}; speakerText:string; bibleText:string;
+  scenes:Record<Role,string>&Partial<Record<'prayer'|'chapter'|'interlude'|'singing'|'remote',string>>; speakerText:string; bibleText:string;
   nextServiceText:string; audioInput:string; confirmed:boolean;
 }
 export interface CaptionBindings {
@@ -28,6 +29,8 @@ export interface Service { id:string; title:string; startsAt:string }
 export interface Workspace {
   format:'broadcast-cc-workspace'; version:1; obsUrl:string; companionUrl:string;
   inventory:Inventory|null; connections:Connection[]; bindings:Bindings;
+  /** OBS cross dissolve; omitted by older workspaces means 900 ms. */
+  transitionMs?:number;
   captions:CaptionBindings; services:Service[]; speakers:string[];
   hardwareNotes:{frontInput:string;sideInput:string;audioRoute:string};
   audioObservations:AudioObservation[];

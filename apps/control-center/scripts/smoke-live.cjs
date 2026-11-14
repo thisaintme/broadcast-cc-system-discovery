@@ -6,9 +6,9 @@ let peer,finished=false,allowGrant=false,allowStop=false,grants=0,stops=0;
 const timer=setTimeout(()=>finish(1,new Error('Live UI test timed out')),90000);
 dialog.showMessageBox=async(_window,options)=>{
   assert.equal(options.defaultId,0);
-  if(options.message==='Enable live control of this OBS session?'){grants++;assert.match(options.detail,/Synthetic production collection/);return {response:allowGrant?1:0};}
-  if(options.message==='Stop OBS transmission now?'){stops++;return {response:allowStop?1:0};}
-  if(options.message==='Start the configured OBS stream?')return {response:1};
+  if(options.message==='Steuerung für diese OBS-Sitzung freigeben?'){grants++;assert.match(options.detail,/Synthetic production collection/);return {response:allowGrant?1:0};}
+  if(options.message==='OBS-Übertragung jetzt beenden?'){stops++;return {response:allowStop?1:0};}
+  if(options.message==='Eingerichtete OBS-Übertragung starten?')return {response:1};
   return {response:0};
 };
 async function finish(code,error){if(finished)return;finished=true;clearTimeout(timer);if(error)console.error(error);if(peer)await peer.close();try{fs.rmSync(dir,{recursive:true,force:true});}catch{}app.exit(code);}

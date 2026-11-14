@@ -1,3 +1,5 @@
+import {allowLiveFullscreen} from './live-window-permissions.ts';
+import {SCENE_LABELS} from './v107-model.ts';
 import {ObsCredentialVault} from './obs-credentials.ts';
 import {YouTubeSecretFile} from './youtube-storage.ts';
 import {DeskCueStore} from './desk-cues.ts';
@@ -23,7 +25,7 @@ import {parseOperatorAction,describeOperatorAction} from './obs-operator.ts';
 import {YouTubeManager} from './youtube-main.ts';
 import {youtubeError} from './youtube-model.ts';
 protocol.registerSchemesAsPrivileged([{scheme:'bcc',privileges:{standard:true,secure:true,supportFetchAPI:true}}]);
-let window:BrowserWindow|null=null,workspace:Workspace=blankWorkspace(),busy=false,quitting=false,companionResult='Not inspected';
+let window:BrowserWindow|null=null,workspace:Workspace=blankWorkspace(),busy=false,quitting=false,companionResult='Nicht geprüft';
 let youtube:YouTubeManager|null=null;
 let credentials:ObsCredentialVault|null=null,cues:DeskCueStore|null=null,reconnectTimer:ReturnType<typeof setInterval>|null=null,suspended=false;
 const peer=new LiveObs();
@@ -54,12 +56,15 @@ async function exportText(defaultPath:string,content:string,title:string):Promis
 }
 app.whenReady().then(async()=>{
   protocol.handle('bcc',async request=>{
-    const url=new URL(request.url),types:Record<string,string>={'/live.html':'text/html','/live-renderer.js':'text/javascript','/youtube.html':'text/html','/youtube-renderer.js':'text/javascript','/stream-management.html':'text/html','/stream-management-renderer.js':'text/javascript','/stream-management.css':'text/css','/desk-tokens.css':'text/css','/styles.css':'text/css','/live.css':'text/css','/konzept-b.css':'text/css'};
+    const url=new URL(request.url),types:Record<string,string>={'/live.html':'text/html','/live-renderer.js':'text/javascript','/youtube.html':'text/html','/youtube-renderer.js':'text/javascript','/stream-management.html':'text/html','/stream-management-renderer.js':'text/javascript','/stream-management.css':'text/css','/desk-tokens.css':'text/css','/styles.css':'text/css','/live.css':'text/css','/konzept-b.css':'text/css','/v107.css':'text/css'};
     if(url.host!=='app'||!types[url.pathname])return new Response('Not found',{status:404});
     const body=await readFile(path.join(__dirname,'renderer',url.pathname.slice(1)));
     return new Response(new Uint8Array(body),{headers:{'Content-Type':types[url.pathname]}});
   });
-  session.defaultSession.setPermissionRequestHandler((_w,_p,callback)=>callback(false));session.defaultSession.setPermissionCheckHandler(()=>false);
+  // Allow only user-initiated document fullscreen in this exact top-level desk.
+  // Media, clipboard, external navigation and every other permission stay denied.
+  session.defaultSession.setPermissionRequestHandler((requester,permission,callback,details)=>callback(allowLiveFullscreen(permission,requester,window?.webContents??null,details)));
+  session.defaultSession.setPermissionCheckHandler((requester,permission,_origin,details)=>allowLiveFullscreen(permission,requester,window?.webContents??null,details));
   try{workspace=await loadWorkspace(store());}catch{live.release('Saved workspace could not be read. It has not been overwritten; import a valid workspace.');}
   const encrypted=()=>safeStorage.isEncryptionAvailable()&&(process.platform!=='linux'||safeStorage.getSelectedStorageBackend()!=='basic_text');
   credentials=new ObsCredentialVault(new YouTubeSecretFile(path.join(app.getPath('userData'),'credentials','obs.enc'),{available:encrypted,encrypt:v=>safeStorage.encryptString(v),decrypt:v=>safeStorage.decryptString(v)}),encrypted);
@@ -137,14 +142,14 @@ app.whenReady().then(async()=>{
   });
   handle('live:export',async()=>exportText('broadcast-cc-workspace.json',JSON.stringify(validateWorkspace(workspace,true),null,2)+'\n','Export workspace without credentials or live authorization'));
   handle('live:companion',async()=>{
-    editable();const pick=await dialog.showMessageBox(window!,{type:'question',buttons:['Cancel','Read local configuration'],defaultId:0,cancelId:0,message:'Inspect Companion without executing actions?',detail:'Only selected connection metadata is retained. Credentials and raw exports are not saved.'});
+    editable();const pick=await dialog.showMessageBox(window!,{type:'question',buttons:['Abbrechen','Lokale Konfiguration lesen'],defaultId:0,cancelId:0,message:'Companion-Konfiguration prüfen?',detail:'Nur ausgewählte Verbindungsdaten werden übernommen. Zugangsdaten und Rohdaten werden nicht gespeichert.'});
     if(pick.response!==1)return state();const result=await inspectCompanion(workspace.companionUrl);
-    await save({...workspace,connections:result.connections});companionResult=`Companion ${result.build}: configuration read; device health is not verified.`;return state();
+    await save({...workspace,connections:result.connections});companionResult=`Companion ${result.build}: Konfiguration gelesen; Gerätezustand nicht bestätigt.`;return state();
   });
   handle('live:enable',async(raw:unknown)=>{
     const permissions=normalizePermissions(raw),checked=await live.checkGrant(permissions),w=workspace;
-    const summary=`Collection: ${checked.collection}\nProfile: ${checked.profile}\nScenes/captions: ${permissions.scenes?'ENABLED':'off'}\nService audio: ${permissions.audio?w.bindings.audioInput:'off'}\nOBS start/stop: ${permissions.stream?'ENABLED':'off'}\nOBS operator desk: ${permissions.operator?'ENABLED — all scene/preview selections, input mute/level, source visibility/text, media and recording/replay/virtual-camera operations. Each operation requires a separate confirmation.':'off'}\n\nScene mappings: ${Object.entries(w.bindings.scenes).map(([r,n])=>r+' = '+(n||'unmapped')).join('; ')}\nBible: ${w.bindings.bibleText||'unmapped'}\nNext service: ${w.bindings.nextServiceText||'unmapped'}\nReviewed speaker-name pool: ${w.captions.speakerPool.join(', ')||'not configured'}\n\nEnabling does not change any output. Commands after this can affect the actual broadcast. YouTube destination/event status is not independently verified by the OBS-only controls. Use the YouTube menu for managed events. Missing features remain individually unavailable. Manual OBS/Stream Deck control remains available.`;
-    const pick=await dialog.showMessageBox(window!,{type:'warning',buttons:['Cancel','Enable selected live controls'],defaultId:0,cancelId:0,message:'Enable live control of this OBS session?',detail:summary});
+    const summary=`Sammlung: ${checked.collection}\nProfil: ${checked.profile}\nSzenen und Einblendungen: ${permissions.scenes?'freigegeben':'aus'}\nSendeton: ${permissions.audio?w.bindings.audioInput:'aus'}\nOBS starten / beenden: ${permissions.stream?'freigegeben':'aus'}\nErweitertes OBS-Pult: ${permissions.operator?'freigegeben — Bildwahl, Tonpegel, Quellen, Medien und Aufnahme benötigen jeweils eine Bestätigung.':'aus'}\n\nSzenen: ${Object.entries(w.bindings.scenes).map(([r,n])=>((SCENE_LABELS as Record<string,string>)[r]||r)+' = '+(n||'nicht zugeordnet')).join('; ')}\nÜberblenden: ${(w.transitionMs??900)/1000} Sekunden. Die App prüft die Überblendung und setzt bei Bedarf eine OBS-Übergangsüberschreibung für die Zielszene.\nBibelstelle: ${w.bindings.bibleText||'nicht zugeordnet'}\nFolgetermin: ${w.bindings.nextServiceText||'nicht zugeordnet'}\nSprecherquellen: ${w.captions.speakerPool.join(', ')||'nicht eingerichtet'}\n\nDie Freigabe verändert noch keine Ausgabe. Danach können Aktionen die laufende Übertragung verändern. OBS-Steuerung bestätigt keine YouTube-Veröffentlichung. Fehlende Zuordnungen sperren nur betroffene Aktionen. OBS und Stream Deck bleiben unabhängig bedienbar.`;
+    const pick=await dialog.showMessageBox(window!,{type:'warning',buttons:['Abbrechen','Ausgewählte Steuerung freigeben'],defaultId:0,cancelId:0,message:'Steuerung für diese OBS-Sitzung freigeben?',detail:summary});
     if(pick.response===1)await live.grant(permissions,checked.ticket);return live.snapshot();
   });
   handle('live:select',async(id:unknown)=>{if(typeof id!=='string'||id.length>100)throw new LiveFailure('Invalid service selection.');live.selectService(id);return live.snapshot();});
@@ -161,9 +166,9 @@ app.whenReady().then(async()=>{
     }
     if(['start','stop','outro'].includes(command)){
       const ticket=live.ticket(),s=live.snapshot(),reason=s.reasons[command as LiveCommand];if(reason.length)throw new LiveFailure(reason.join(' '));
-      const message=command==='start'?'Start the configured OBS stream?':command==='stop'?'Stop OBS transmission now?':'Mute service audio and show Outro?';
-      const detail=command==='start'?'This OBS-only action will mute the selected service input, put Intro on Program, then start the existing OBS destination. It does not publish an app-managed YouTube event. For coordinated publication use YouTube → Stream Management → Broadcast controls → Start broadcast with Intro.':command==='stop'?'This stops OBS transmission only. It does not complete an app-managed YouTube event. Use the YouTube manager to end the linked event and stop OBS together. No automatic restart will be attempted.':'This mutes the selected OBS service input, updates next-service text and shows Outro. It does not stop transmission.';
-      const pick=await dialog.showMessageBox(window!,{type:'warning',buttons:['Cancel',command==='start'?'Start OBS stream':command==='stop'?'Stop OBS stream':'Show Outro'],defaultId:0,cancelId:0,message,detail});
+      const message=command==='start'?'Eingerichtete OBS-Übertragung starten?':command==='stop'?'OBS-Übertragung jetzt beenden?':'Sendeton ausschalten und Outro zeigen?';
+      const detail=command==='start'?'Schaltet den Sendeton aus, zeigt Intro und startet das in OBS eingerichtete Ziel. Ein verwalteter YouTube-Termin wird dabei nicht veröffentlicht. Nutzen Sie dafür „Deutsch mit Intro starten“.':command==='stop'?'Beendet nur die OBS-Übertragung. Ein verwaltetes YouTube-Event bleibt unverändert. Für den gemeinsamen Abschluss nutzen Sie „Beenden“. Es erfolgt kein automatischer Neustart.':'Schaltet den Sendeton aus, aktualisiert den Folgetermin und zeigt Outro. Die Übertragung läuft weiter.';
+      const pick=await dialog.showMessageBox(window!,{type:'warning',buttons:['Abbrechen',command==='start'?'OBS-Übertragung starten':command==='stop'?'OBS-Übertragung beenden':'Outro zeigen'],defaultId:0,cancelId:0,message,detail});
       if(pick.response!==1)return live.snapshot();if(ticket!==live.ticket())throw new LiveFailure('OBS or control state changed during confirmation. Review and try the intended action again.');
     }
     const service=live.snapshot().selectedService,deck=cues!.snapshot(service),entry=deck.entries.find(e=>e.id===deck.selected);

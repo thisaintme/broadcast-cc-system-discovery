@@ -58,6 +58,9 @@ async function rig(kind,grouped){
   }
   const port={
     read:async(name,data={})=>{
+      if(name==='GetSceneTransitionList')return {transitions:[{transitionName:'Fade',transitionKind:'fade_transition'}]};
+      if(name==='GetSceneSceneTransitionOverride')return {transitionName:null,transitionDuration:null};
+      if(name==='GetCurrentSceneTransition')return {transitionKind:'fade_transition',transitionDuration:900};
       const result=request(name,data);
       if(name==='GetInputSettings'&&data.inputName==='Next date')result.inputKind=kind;
       if(name==='GetInputList')result.inputs.find(i=>i.inputName==='Next date').inputKind=kind;
