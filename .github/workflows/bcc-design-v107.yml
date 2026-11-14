@@ -28,22 +28,29 @@ jobs:
         run: |
           set -euo pipefail
           if test -d .github/bcc-v107-import; then
-            test "$(git rev-parse HEAD^)" = '34273eaa6c6c5efb06c435b4e25e1c1625dfe88f'
+            test "$(git rev-parse HEAD^)" = 'b492c334402f25e0b6580c452d95e11b23574abd'
             test -z "$(git diff HEAD^ HEAD -- apps/control-center)"
             python3 - <<'PY'
-          import pathlib, hashlib, lzma, subprocess
+          import pathlib, hashlib, lzma, subprocess, re
           parts=sorted(pathlib.Path('.github/bcc-v107-import').glob('*.xzpart'))
           assert len(parts)==8
           payload=b''.join(p.read_bytes() for p in parts)
           assert hashlib.sha256(payload).hexdigest()=='4a48a4922f730a52ad44669d7dc2aee9d89fbcedc3b5b76c71c4fc3052eebaca'
           patch=lzma.decompress(payload)
           assert len(patch)<1000000
+          current=None
           for line in patch.decode().splitlines():
             if line.startswith('diff --git '):
               fields=line.split()
               assert len(fields)==4 and fields[2].startswith('a/apps/control-center/') and fields[3].startswith('b/apps/control-center/')
-          subprocess.run(['git','apply','--check','-'],input=patch,check=True)
-          subprocess.run(['git','apply','--index','-'],input=patch,check=True)
+              current=fields[2][2:]
+            elif line.startswith('index '):
+              old=line.split()[1].split('..')[0]
+              if set(old)!={'0'}:
+                actual=subprocess.check_output(['git','hash-object',current],text=True).strip()
+                assert actual.startswith(old), current+' differs from the tested base'
+          subprocess.run(['git','apply','--unidiff-zero','--check','-'],input=patch,check=True)
+          subprocess.run(['git','apply','--unidiff-zero','--index','-'],input=patch,check=True)
           PY
             git rm -r .github/bcc-v107-import
             git config user.name 'github-actions[bot]'
