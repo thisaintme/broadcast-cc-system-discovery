@@ -1,0 +1,53 @@
+name: V107 offline source assets
+on:
+  push:
+    branches: ['feat/bcc-design-v107']
+    paths: ['.github/workflows/bcc-v107-assets.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  assets:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Fetch primary-source offline content with provenance
+        shell: bash
+        run: |
+          mkdir -p assets
+          python3 - <<'PY'
+          import urllib.request, pathlib, json, hashlib, zipfile
+          out=pathlib.Path('assets'); manifest=[]
+          sources={
+            'schlachter.zip':'https://ebible.org/Scriptures/deu1951_vpl.zip',
+            'luther1912.zip':'https://ebible.org/Scriptures/deu1912_vpl.zip',
+            'elberfelder1905.zip':'https://ebible.org/Scriptures/deuelo_vpl.zip',
+            'schlachter-copyright.html':'https://ebible.org/deu1951/copyright.htm',
+            'luther1912-copyright.html':'https://ebible.org/deu1912/copyright.htm',
+            'elberfelder1905-copyright.html':'https://ebible.org/deuelo/copyright.htm',
+            'Inter.ttf':'https://raw.githubusercontent.com/google/fonts/main/ofl/inter/Inter%5Bopsz,wght%5D.ttf',
+            'Inter-OFL.txt':'https://raw.githubusercontent.com/google/fonts/main/ofl/inter/OFL.txt',
+            'Literata.ttf':'https://raw.githubusercontent.com/google/fonts/main/ofl/literata/Literata%5Bopsz,wght%5D.ttf',
+            'Literata-OFL.txt':'https://raw.githubusercontent.com/google/fonts/main/ofl/literata/OFL.txt',
+          }
+          for name,url in sources.items():
+            req=urllib.request.Request(url,headers={'User-Agent':'BCC-offline-assets/1.0'})
+            with urllib.request.urlopen(req,timeout=90) as response: data=response.read(25000000)
+            if len(data)>=25000000: raise RuntimeError('Asset exceeds limit')
+            (out/name).write_bytes(data)
+            manifest.append({'name':name,'source':url,'sha256':hashlib.sha256(data).hexdigest(),'bytes':len(data)})
+            if name.endswith('.zip'):
+              with zipfile.ZipFile(out/name) as z:
+                print(name, z.namelist())
+                for entry in z.namelist():
+                  if entry.endswith('.txt'):
+                    print(z.read(entry)[:1800].decode('utf-8',errors='replace'))
+                    break
+          (out/'source-manifest.json').write_text(json.dumps(manifest,indent=2))
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: bcc-v107-offline-source-assets
+          path: assets/
+          if-no-files-found: error
+          retention-days: 30
