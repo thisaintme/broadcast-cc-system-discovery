@@ -184,6 +184,7 @@ export class LiveController{
       if(!valid())throw new LiveFailure('Action interrupted; no further commands sent.');
       const o=await this.query();if(!valid())throw new LiveFailure('Action interrupted.');
       if(o.collection!==this.collection||o.profile!==this.profile||!o.program||o.streaming===null)throw new LiveFailure('OBS target or status changed. No further commands sent.');
+      if(command!=='stop'&&o.reconnecting!==false)throw new LiveFailure('Die OBS-Verbindung ist nicht stabil bestätigt. Keine weitere Aktion gesendet.');
       if(!permittedPrograms.has(o.program))throw new LiveFailure('Program changed outside this action. No further commands sent.');
       if(pendingProgram&&o.program===pendingProgram){permittedPrograms=new Set([pendingProgram]);pendingProgram=null;}
       if((command==='prepare'||command==='intro'||(command==='start'&&!streamIssued))&&(o.streaming!==false||o.reconnecting!==false))throw new LiveFailure('OBS is transmitting, reconnecting, or its reconnect state is unknown. Preparation stopped; it was not restarted.');
@@ -194,7 +195,8 @@ export class LiveController{
       if(operator){
         if(!p.operator||!operatorRequests(operator).includes(name)||name==='StartStream'||name==='StopStream')throw new LiveFailure('The operator action does not authorize this request.');
       }else{
-        if((['SetInputSettings','SetSceneItemEnabled','SetCurrentProgramScene'].includes(name)&&!p.scenes)||(name==='SetInputMute'&&!p.audio)||(['StartStream','StopStream'].includes(name)&&!p.stream))throw new LiveFailure('Permission was released.');
+        if((['SetInputSettings','SetSceneItemEnabled','SetCurrentProgramScene','SetSceneSceneTransitionOverride'].includes(name)&&!p.scenes)||(name==='SetInputMute'&&!p.audio)||(['StartStream','StopStream'].includes(name)&&!p.stream))throw new LiveFailure('Permission was released.');
+        if(name==='SetSceneSceneTransitionOverride'&&!Object.values(w.bindings.scenes).includes(String(data.sceneName)))throw new LiveFailure('Die Überblendung gehört nicht zu einer zugeordneten Szene.');
         if(name==='SetInputMute'&&(data.inputName!==w.bindings.audioInput||typeof data.inputMuted!=='boolean'))throw new LiveFailure('Service-input mismatch.');
         if(name==='StartStream'&&command!=='start')throw new LiveFailure('Start requires its separate confirmed action.');
         if(name==='StopStream'&&command!=='stop')throw new LiveFailure('Stop requires its separate confirmed action.');

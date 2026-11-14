@@ -5,8 +5,13 @@ const clone=x=>JSON.parse(JSON.stringify(x));
 function fixture(){
   const base=baseFixture(),state=base.state;
   state.collection='Synthetic production collection';state.profile='Synthetic profile';state.reconnecting=false;state.streamReply=undefined;
+  state.transitions=[{transitionName:'Überblenden',transitionKind:'fade_transition'}];state.transition={transitionName:'Überblenden',transitionKind:'fade_transition',transitionDuration:900};state.overrides={};state.ignoreTransition=false;
   state.availableRequests=['GetStreamStatus','StartStream','StopStream'];state.ignoreStart=false;state.ignoreStop=false;
   function request(name,data={}){
+    if(name==='GetSceneTransitionList'){state.calls.push({name,data:clone(data)});state.before(name,data);return {transitions:clone(state.transitions)};}
+    if(name==='GetCurrentSceneTransition'){state.calls.push({name,data:clone(data)});state.before(name,data);return clone(state.transition);}
+    if(name==='GetSceneSceneTransitionOverride'){state.calls.push({name,data:clone(data)});state.before(name,data);return clone(state.overrides[data.sceneName]||{transitionName:null,transitionDuration:null});}
+    if(name==='SetSceneSceneTransitionOverride'){state.calls.push({name,data:clone(data)});state.before(name,data);if(!state.ignoreTransition)state.overrides[data.sceneName]={transitionName:data.transitionName,transitionDuration:data.transitionDuration};state.writes.push({name,data:clone(data)});state.afterWrite(name,data);return {};}
     if(!['GetVersion','GetProfileList','GetStreamStatus','StartStream','StopStream'].includes(name))return base.request(name,data);
     state.calls.push({name,data:clone(data)});state.before(name,data);
     if(state.failures.has(name))throw Object.assign(new Error('PRIVATE_UPSTREAM_DIAGNOSTIC'),state.failures.get(name));
@@ -36,7 +41,7 @@ async function start(){
       if(p.op===1){if(p.d.authentication!==auth)return ws.close(4009);clients.add(ws);ws.send(JSON.stringify({op:2,d:{negotiatedRpcVersion:1}}));return;}
       if(p.op!==6||!clients.has(ws))return;
       const {requestType,requestId,requestData={}}=p.d;
-      try{const responseData=f.request(requestType,requestData);ws.send(JSON.stringify({op:7,d:{requestType,requestId,requestStatus:{result:true,code:100},responseData}}));}
+      try{const responseData=f.request(requestType,requestData);const reply=()=>{if(ws.readyState===1)ws.send(JSON.stringify({op:7,d:{requestType,requestId,requestStatus:{result:true,code:100},responseData}}));};if(requestType==='GetSceneTransitionList'&&f.state.replyDelayMs>0)setTimeout(reply,f.state.replyDelayMs);else reply();}
       catch(e){ws.send(JSON.stringify({op:7,d:{requestType,requestId,requestStatus:{result:false,code:e.code||500,comment:'PRIVATE_UPSTREAM_DIAGNOSTIC'}}}));}
     });ws.on('close',()=>clients.delete(ws));
   });

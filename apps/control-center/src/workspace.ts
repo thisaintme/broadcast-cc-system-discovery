@@ -43,7 +43,7 @@ function inventory(raw:unknown):Inventory{
     }),capturedAt:text(i.capturedAt),warnings:['Saved observation, not live status. Reconnect before enabling OBS controls.']};
 }
 export function suggestBindings(i:Inventory):Bindings{
-  const b=blankBindings(),aliases={intro:['Intro'],main:['Main'],speaker:['Sprecher','Speaker'],bible:['Kapitel1','Bible'],prayer:['Beten','Gebet','Prayer'],outro:['Outro']};
+  const b=blankBindings(),aliases={intro:['Intro'],main:['Main'],speaker:['Sprecher','Speaker'],bible:['Kapitel1','Bible'],prayer:['Beten','Gebet','Prayer'],chapter:['Kapitel','Chapter'],interlude:['Zwischenbild','Break'],singing:['Singen','Singing'],remote:['Stream','Remote'],outro:['Outro']};
   for(const role of DESK_ROLES)b.scenes[role]=aliases[role].find(n=>i.scenes.includes(n))||'';
   for(const[key,names]of Object.entries({nextServiceText:['Nächster-Livestream','NEXTSTREAM'],audioInput:['1audio-de']}))(b as any)[key]=names.find(n=>i.inputs.some(x=>x.name===n))||'';
   return b;
@@ -67,6 +67,10 @@ export function validateWorkspace(raw:unknown,imported=false):Workspace{
   const r=object(raw),w=blankWorkspace();
   w.obsUrl=localEndpoint(r.obsUrl||w.obsUrl,'obs');w.companionUrl=localEndpoint(r.companionUrl||w.companionUrl,'companion');
   w.inventory=r.inventory?inventory(r.inventory):null;w.connections=connections(r.connections);
+  if(r.transitionMs!==undefined){
+    if(!Number.isInteger(r.transitionMs)||![300,600,900,1500,2500].includes(r.transitionMs as number))throw new Error('Wählen Sie eine gültige Überblenddauer.');
+    w.transitionMs=r.transitionMs as number;
+  }
   const b=object(r.bindings);
   for(const role of DESK_ROLES)w.bindings.scenes[role]=text(object(b.scenes)[role]);
   for(const key of ['speakerText','bibleText','nextServiceText','audioInput'] as const)w.bindings[key]=text(b[key]);

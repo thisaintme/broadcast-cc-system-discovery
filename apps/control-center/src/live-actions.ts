@@ -1,9 +1,10 @@
-import type {Role,Workspace} from './model.ts';
+import type {Role,DeskRole,Workspace} from './model.ts';
 import type {LiveCommand,LiveObservation,LivePhase,LiveWrite,LivePermissions} from './live-contract.ts';
 import type {OperatorReader} from './obs-operator.ts';
 import {LiveFailure} from './live-contract.ts';
 import {nextServiceCaption} from './offline.ts';
 import {text} from './workspace.ts';
+import {ensureDissolve} from './live-transition.ts';
 import {requireScene,requireText,requireSpeakerGroup,requireAudio,textSettings,commandPermissions} from './live-validation.ts';
 export interface LiveActionContext {
   workspace:Workspace; reader:OperatorReader; serviceId:string;
@@ -29,9 +30,12 @@ export async function executeLiveAction(ctx:LiveActionContext,command:LiveComman
     if((await reader.read('GetInputMute',{inputName:w.bindings.audioInput})).inputMuted!==muted)throw new LiveFailure('Mute result not confirmed. Check OBS; no retry was made.');
     await ctx.verified(muted?'Selected service input muted.':'Selected service input unmuted.');
   };
-  const program=async(role:Role|'prayer')=>{
+  const program=async(role:DeskRole)=>{
     const name=await requireScene(reader,w,role),before=await ctx.check();
-    if(before.program!==name)await change('SetCurrentProgramScene',{sceneName:name});
+    if(before.program!==name){
+      await ensureDissolve(reader,change,name,w.transitionMs??900);
+      await change('SetCurrentProgramScene',{sceneName:name});
+    }
     let confirmed=false;
     for(let i=0;i<60;i++){
       const observed=await ctx.check();if(observed.program===name){confirmed=true;break;}
@@ -63,6 +67,9 @@ export async function executeLiveAction(ctx:LiveActionContext,command:LiveComman
       await requireScene(reader,w,'intro');await requireAudio(reader,w);await mute(true);await program('intro');
       if(command==='start'){await change('StartStream');await confirmTransmission(true);}return 'intro';
     }
+    case 'intro-scene':await requireScene(reader,w,'intro');await requireAudio(reader,w);await mute(true);await program('intro');return 'intro';
+    case 'prayer-scene':await program('prayer');return 'prayer';
+    case 'chapter':case 'interlude':case 'singing':case 'remote':await program(command);return command;
     case 'on-air':await requireScene(reader,w,'main');await requireAudio(reader,w);await program('main');await mute(false);return 'main';
     case 'main':await program('main');return 'main';
     case 'mute':case 'unmute':await mute(command==='mute');return null;
