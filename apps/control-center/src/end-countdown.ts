@@ -21,7 +21,7 @@ export class EndCountdown {
   private async finish(token:number,execute:(valid:()=>void)=>Promise<void>):Promise<void>{
     if(token!==this.epoch)return;this.timer=null;
     const valid=()=>{if(token!==this.epoch)throw new Error('Abschluss abgebrochen.');};
-    try{valid();this.guard?.();this.value={...this.value,until:null,status:'ending',message:'YouTube-Ende wird geprüft und ausgeführt …'};this.emit();await execute(valid);valid();this.value={...this.value,status:'completed',message:'Die ausgewählten YouTube-Events sind beendet. Web Presenter und Kameras bitte manuell prüfen.'};}
+    try{valid();this.guard?.();this.value={...this.value,until:null,status:'ending',message:'YouTube-Ende wird geprüft und ausgeführt …'};this.emit();await execute(valid);valid();this.value={...this.value,status:'completed',message:'Die ausgewählten Übertragungen sind beendet. Die eingerichteten Abschluss-Schritte sind in der Geräteübersicht dokumentiert.'};}
     catch{if(token!==this.epoch)return;this.value={...this.value,until:null,status:'failed',message:'Das Ende konnte nicht vollständig bestätigt werden. Bereits beendete Events bleiben beendet. Prüfen Sie DE und RU; es wird nicht automatisch erneut versucht.'};}
     finally{if(token===this.epoch){this.guard=null;this.emit();}}
   }

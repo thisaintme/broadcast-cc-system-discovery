@@ -8,3 +8,6 @@ release/
 *.log
 .env*
 .DS_Store
+
+.generated/
+.content-cache/

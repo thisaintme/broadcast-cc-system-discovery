@@ -19,12 +19,15 @@ async function main(){
   async function page(file){return until(async()=>{if(exited)throw Error('Packaged app exited');let pages=[];try{pages=await(await fetch(`http://127.0.0.1:${port}/json/list`,{signal:AbortSignal.timeout(1000)})).json();}catch{}return pages.find(t=>t.type==='page'&&t.url===`bcc://app/${file}.html`);},file);}
   try{
     const desk=await page('live');const d=expr=>evaluate(desk,expr);
-    await until(()=>d(`document.querySelector('.bcc-shell #nav-youtube') && document.getElementById('live-mode')?.textContent==='Nur beobachten'`),'redesigned desk and YouTube navigation');
+    await until(()=>d(`!!document.getElementById('v107-scene-main')`),'packaged V107 Regie');
     assert.equal(await d(`window.liveService.site().then(s=>s.version)`),require('../package.json').version);
     assert.equal(await d(`document.documentElement.dataset.theme`),'dark');
-    assert.equal(await d(`document.querySelector('#nav-live').getAttribute('aria-current')`),'page');
-    assert.equal(await d(`document.querySelectorAll('.bcc-rail .desk-sidebar-content').length`),1);
-    assert.equal(await d(`!!document.querySelector('#live-prayer')`),true);
+    assert.equal(await d(`document.querySelectorAll('.v107-scenes button').length`),8);
+    assert.equal(await d(`document.querySelectorAll('#v107-audio').length`),1);
+    assert.equal(await d(`window.liveService.site().then(s=>s.live.permissions.scenes)`),false);
+    assert.equal(await d(`window.liveService.chapter('schlachter',42,3).then(c=>c.verses.find(v=>v.n===16).text.includes('Gott'))`),true);
+    await d(`document.fonts.ready`);
+    assert.equal(await d(`document.fonts.check('14px Inter')`),true);
     await d(`document.querySelector('#nav-setup').click()`);
     await until(()=>d(`!!document.querySelector('#save-obs-credential') && !!document.querySelector('#connect-saved-obs')`),'packaged credential settings');
     assert.equal(await d(`document.querySelector('#live-obs-password').type`),'password');
@@ -48,7 +51,7 @@ async function main(){
     assert.match(await m(`document.querySelector('.preview').textContent`),/DE: unlisted · RU: unlisted/);
     const rows=await m(`[...document.querySelectorAll('.preview .dates > div')].map(e=>e.textContent)`);assert.equal(new Set(rows).size,8);for(const row of rows){const [date,time]=row.split(' · ');assert.equal(time,'11:00');assert.equal(new Date(date+'T12:00:00Z').getUTCDay(),0);}
     assert.equal(await m(`window.streamManagement.panel().then(p=>p.state.occurrences.length)`),0);
-    console.log('PASS mounted DMG: redesigned German desk → visible YouTube button → both accounts → eight Sundays at 11:00 / sixteen unlisted event previews. Nothing scheduled or transmitted.');
+    console.log('PASS mounted DMG: V107 desk, offline Bible, local fonts → visible YouTube button → both accounts → eight Sundays at 11:00 / sixteen unlisted event previews. Nothing scheduled or transmitted.');
   }finally{if(!exited)child.kill('SIGTERM');await Promise.race([exit,delay(2000)]);if(!exited){child.kill('SIGKILL');await exit;}await rm(profile,{recursive:true,force:true,maxRetries:4});}
 }
 main().catch(e=>{console.error(e);process.exitCode=1;});

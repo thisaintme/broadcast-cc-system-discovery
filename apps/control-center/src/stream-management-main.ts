@@ -1,3 +1,5 @@
+import {sameRemoteEvent,sameRemoteProfile,publishReviewedEvent} from './remote-start.ts';
+import type {PrivateProfile} from './stream-management-model.ts';
 import {completeReviewedEvent} from './remote-end.ts';
 import { BrowserWindow, clipboard, dialog, ipcMain, safeStorage, shell } from 'electron';
 import type { IpcMainInvokeEvent } from 'electron';
@@ -129,6 +131,24 @@ export class StreamManagementWindow {
             try{this.remote[a.language]=await this.service.refresh(a.language);this.checkedAt[a.language]=Date.now();delete this.connectionErrors[a.language];}
             catch{this.checkedAt[a.language]=null;this.connectionErrors[a.language]='YouTube-Status konnte nicht bestätigt werden. Verbindung in Einstellungen prüfen.';}
         }}finally{this.observing=false;this.emit();}
+    }
+    async russianTarget(serviceId:string,end=false):Promise<{broadcast:RemoteBroadcast;profile:PrivateProfile}>{
+        const occurrence=this.service.snapshot().occurrences.find(o=>`stream_${o.id}`===serviceId),target=occurrence?.targets.find(t=>t.language==='ru');
+        if(!target?.broadcastId||target.stage!=='ready')throw new ManagementError('target','Kein bestätigtes russisches Event für diese Sendung.');
+        const api=await this.accounts.authorized('ru',target.channelId),b=await api.broadcast(target.broadcastId),saved=await this.accounts.savedProfile('ru'),profile=await api.profile(saved.id);
+        sameRemoteProfile(saved,profile);
+        if(!b||b.id!==target.broadcastId||b.channelId!==target.channelId||b.streamId!==saved.id||!(end?['live','complete']:['ready','testing','live']).includes(b.lifecycle)||b.autoStart||b.autoStop||b.madeForKids===undefined)throw new ManagementError('target','Russisches Event, Streamprofil oder explizite Start-/Stopp-Einstellungen passen nicht. Bitte in der Planung prüfen.');
+        const other=(await api.broadcasts()).find(item=>item.id!==b.id&&item.streamId===saved.id&&['live','testing','testStarting','liveStarting'].includes(item.lifecycle));
+        if(other)throw new ManagementError('conflict','Ein anderes russisches Event verwendet bereits dieses Streamprofil.');
+        return {broadcast:b,profile};
+    }
+    async verifyRussian(serviceId:string,expected:{broadcast:RemoteBroadcast;profile:PrivateProfile},end=false):Promise<void>{
+        const current=await this.russianTarget(serviceId,end);sameRemoteEvent(expected.broadcast,current.broadcast);sameRemoteProfile(expected.profile,current.profile);
+    }
+    async publishRussian(serviceId:string,expected:{broadcast:RemoteBroadcast;profile:PrivateProfile},valid:()=>void):Promise<void>{
+        const epoch=this.generation,guard=()=>{valid();if(epoch!==this.generation)throw new ManagementError('cancelled','Veröffentlichung abgebrochen.');};
+        await this.verifyRussian(serviceId,expected);guard();const api=await this.accounts.authorized('ru',expected.broadcast.channelId);guard();
+        await publishReviewedEvent(api,expected.broadcast,expected.profile,guard);guard();this.checkedAt.ru=null;
     }
     async reviewRussianEnd(serviceId:string):Promise<RemoteBroadcast>{
         const occurrence=this.service.snapshot().occurrences.find(o=>`stream_${o.id}`===serviceId),target=occurrence?.targets.find(t=>t.language==='ru');

@@ -29,8 +29,8 @@ function fakePort(f){
   const port={connected:false,onEvent:()=>{},onDisconnect:()=>{},isConnected(){return this.connected;},async connect(){this.connected=true;},async disconnect(){this.connected=false;this.onDisconnect();},async read(n,d={}){return f.request(n,d);},async change(n,d={}){f.request(n,d);}};
   f.state.onEvent=(n,d)=>port.onEvent(n,d);return port;
 }
-async function start(){
-  const f=fixture(),password='invented-live-test-password',salt=crypto.randomBytes(12).toString('base64'),challenge=crypto.randomBytes(12).toString('base64');
+async function start(factory=fixture){
+  const f=factory(),password='invented-live-test-password',salt=crypto.randomBytes(12).toString('base64'),challenge=crypto.randomBytes(12).toString('base64');
   const hash=s=>crypto.createHash('sha256').update(s).digest('base64'),auth=hash(hash(password+salt)+challenge);
   const server=new WebSocketServer({host:'127.0.0.1',port:0});await new Promise(resolve=>server.once('listening',resolve));const clients=new Set();
   const emit=(name,data)=>{for(const c of clients)if(c.readyState===1)c.send(JSON.stringify({op:5,d:{eventType:name,eventIntent:8,eventData:data}}));};f.state.onEvent=emit;

@@ -16,6 +16,7 @@ export interface ManagementApi {
     create(input: EventInput, guard?: () => void): Promise<RemoteBroadcast>;
     update(before: RemoteBroadcast, input: EventInput, guard?: () => void): Promise<RemoteBroadcast>;
     delete(before: RemoteBroadcast, guard?: () => void): Promise<void>;
+    publish?(before:RemoteBroadcast,guard?:()=>void):Promise<RemoteBroadcast>;
     complete?(before:RemoteBroadcast,guard?:()=>void):Promise<RemoteBroadcast>;
     bind(before: RemoteBroadcast, profileId: string, guard?: () => void): Promise<RemoteBroadcast>;
 }
@@ -147,6 +148,10 @@ export class StreamManagementApi implements ManagementApi {
         return event(await this.request('PUT', 'liveBroadcasts', { part: 'id,snippet,status' }, { id: before.id, snippet, status: { privacyStatus: input.privacy, selfDeclaredMadeForKids: input.madeForKids } }, guard, before.etag));
     }
     async delete(before: RemoteBroadcast, guard?: () => void): Promise<void> { await this.request('DELETE', 'liveBroadcasts', { id: id(before.id) }, undefined, guard, before.etag); }
+    async publish(before:RemoteBroadcast,guard?:()=>void):Promise<RemoteBroadcast>{
+        if(!['ready','testing'].includes(before.lifecycle))throw new ManagementError('state','Das Event ist nicht zur Veröffentlichung bereit.');
+        return event(await this.request('POST','liveBroadcasts/transition',{part:PARTS,id:before.id,broadcastStatus:'live'},undefined,guard,before.etag));
+    }
     async complete(before:RemoteBroadcast,guard?:()=>void):Promise<RemoteBroadcast>{
         if(!['live','complete'].includes(before.lifecycle))throw new ManagementError('state','Only a live event can be completed.');
         if(before.lifecycle==='complete')return before;

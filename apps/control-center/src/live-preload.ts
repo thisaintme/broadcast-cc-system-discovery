@@ -2,6 +2,15 @@ import {contextBridge,ipcRenderer} from 'electron';
 import type {LiveAppBridge,LiveSiteSnapshot} from './live-app.ts';
 const onSite=(callback:(s:LiveSiteSnapshot)=>void)=>{const listener=(_event:unknown,s:LiveSiteSnapshot)=>callback(s);ipcRenderer.on('live:state',listener);return()=>ipcRenderer.removeListener('live:state',listener);};
 const api:LiveAppBridge={
+  checkDevices:()=>ipcRenderer.invoke('live:check-devices'),
+  grantDevices:()=>ipcRenderer.invoke('live:grant-devices'),
+  deviceAction:action=>ipcRenderer.invoke('live:device-action',action),
+  chapter:(translation,book,chapter)=>ipcRenderer.invoke('live:chapter',translation,book,chapter),
+  songs:q=>ipcRenderer.invoke('live:songs',q),
+  importSongs:()=>ipcRenderer.invoke('live:import-songs'),
+  importImage:kind=>ipcRenderer.invoke('live:import-image',kind),
+  media:id=>ipcRenderer.invoke('live:media',id),
+  installPresentation:()=>ipcRenderer.invoke('live:install-presentation'),
   broadcast:kind=>ipcRenderer.invoke('live:broadcast',kind),
   scheduleEnd:scope=>ipcRenderer.invoke('live:schedule-end',scope),
   cancelEnd:()=>ipcRenderer.invoke('live:cancel-end'),

@@ -46,8 +46,8 @@ export async function requireAudio(reader:Reader,w:Workspace):Promise<boolean>{
   if(typeof r.inputMuted!=='boolean')throw new LiveFailure('OBS did not report a valid mute state.');return r.inputMuted;
 }
 export const commandPermissions=(c:LiveCommand):LivePermissions=>({
-  scenes:['prepare','intro','start','on-air','main','speaker','bible','prayer','outro','intro-scene','prayer-scene','chapter','interlude','singing','remote'].includes(c),
-  audio:['intro','intro-scene','start','on-air','outro','mute','unmute'].includes(c),stream:c==='start'||c==='stop',...(c==='operator'?{operator:true}:{}),
+  scenes:['prepare','intro','start','on-air','main','speaker','bible','prayer','outro','intro-scene','prayer-scene','chapter','interlude','singing','remote','presentation','studio-preview','studio-take'].includes(c),
+  audio:['intro','intro-scene','start','on-air','outro','mute','unmute','studio-take'].includes(c),stream:c==='start'||c==='stop',...(['operator','studio-mode','studio-preview','studio-take'].includes(c)?{operator:true}:{}),
 });
 /** Missing features block their own actions, not unrelated mapped functions. */
 export function blockedActions(w:Workspace,o:LiveObservation,p:LivePermissions,connected:boolean,busy:boolean,serviceId:string,now:number,journalError=''):Record<LiveCommand,string[]>{
@@ -59,15 +59,16 @@ export function blockedActions(w:Workspace,o:LiveObservation,p:LivePermissions,c
     if(c!=='stop'&&o.reconnecting!==false)reasons.push('Die OBS-Verbindung ist nicht stabil bestätigt.');
     if(journalError)reasons.push(journalError);
     if(need.scenes&&!p.scenes)reasons.push('Enable Scenes and captions permission.');
-    if(need.audio&&!p.audio)reasons.push('Enable Service audio permission.');
+    if((need.audio||w.presentation?.enabled&&['speaker','bible'].includes(c))&&!p.audio)reasons.push('Enable Service audio permission.');
     if(need.stream&&!p.stream)reasons.push('Enable OBS start/stop permission.');
     if(need.operator&&!p.operator)reasons.push('Enable OBS operator desk permission on Live Service.');
-    const role:DeskRole|undefined=c==='start'||c==='prepare'||c==='intro-scene'?'intro':c==='prayer-scene'?'prayer':c==='on-air'?'main':['intro','main','speaker','bible','prayer','outro','chapter','interlude','singing','remote'].includes(c)?c as DeskRole:undefined;
+    const role:DeskRole|undefined=w.presentation?.enabled&&['speaker','bible'].includes(c)?'main':c==='start'||c==='prepare'||c==='intro-scene'?'intro':c==='prayer-scene'?'prayer':c==='on-air'?'main':['intro','main','speaker','bible','prayer','outro','chapter','interlude','singing','remote'].includes(c)?c as DeskRole:undefined;
+    if(w.presentation?.enabled&&role&&w.presentation.scenes[role as keyof typeof w.presentation.scenes]?.audio!=='preserve'&&!p.audio)reasons.push('Bitte die Tonsteuerung für diese Szene freigeben.');
     if(role&&(!w.bindings.scenes[role]||!o.scenes.includes(w.bindings.scenes[role])))reasons.push(`Map the ${role} scene.`);
     if((c==='speaker'||c==='bible'||c==='prayer')&&!o.scenes.includes(w.bindings.scenes.main))reasons.push('Map Main for the timed return.');
-    if(c==='speaker'&&(!w.captions.speakerGroup||!w.captions.speakerPool.length))reasons.push('Review the speaker-name group and pool in setup.');
-    if(c==='bible'&&!w.bindings.bibleText)reasons.push('Map the Bible-reference text source.');
-    if(c==='outro'&&!w.bindings.nextServiceText)reasons.push('Map the next-service text source.');
+    if(!w.presentation?.enabled&&c==='speaker'&&(!w.captions.speakerGroup||!w.captions.speakerPool.length))reasons.push('Review the speaker-name group and pool in setup.');
+    if(!w.presentation?.enabled&&c==='bible'&&!w.bindings.bibleText)reasons.push('Map the Bible-reference text source.');
+    if(!w.presentation?.enabled&&c==='outro'&&!w.bindings.nextServiceText)reasons.push('Map the next-service text source.');
     if(need.audio&&!w.bindings.audioInput)reasons.push('Select the confirmed service-audio input.');
     if(['prepare','intro','start'].includes(c)&&(o.streaming!==false||o.reconnecting===true))reasons.push('OBS is transmitting or reconnecting. Joining a service must not run Intro preparation.');
     if(c==='stop'&&o.streaming!==true&&o.reconnecting!==true)reasons.push('OBS is not confirmed transmitting.');

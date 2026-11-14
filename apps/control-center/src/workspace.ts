@@ -1,3 +1,4 @@
+import {parsePresentation} from './presentation-model.ts';
 import {blankWorkspace,blankBindings,blankCaptions,ROLES,DESK_ROLES} from './model.ts';
 import type {Workspace,Inventory,SceneNode,Connection,Bindings,SourceCandidate} from './model.ts';
 import {normalizeAudioObservations} from './audio-model.ts';
@@ -71,6 +72,7 @@ export function validateWorkspace(raw:unknown,imported=false):Workspace{
     if(!Number.isInteger(r.transitionMs)||![300,600,900,1500,2500].includes(r.transitionMs as number))throw new Error('Wählen Sie eine gültige Überblenddauer.');
     w.transitionMs=r.transitionMs as number;
   }
+  if(r.presentation!==undefined)w.presentation=parsePresentation(r.presentation);
   const b=object(r.bindings);
   for(const role of DESK_ROLES)w.bindings.scenes[role]=text(object(b.scenes)[role]);
   for(const key of ['speakerText','bibleText','nextServiceText','audioInput'] as const)w.bindings[key]=text(b[key]);

@@ -5,7 +5,7 @@ import {localEndpoint} from './workspace.ts';
 import {obsErrorCode} from './obs-errors.ts';
 import {YouTubeFailure,youtubeServer} from './youtube-model.ts';
 import type {Destination} from './youtube-model.ts';
-const READS=new Set(['GetSceneTransitionList','GetSceneSceneTransitionOverride','GetSourceScreenshot','GetVersion','GetProfileList','GetSceneList','GetGroupList','GetInputList','GetSceneCollectionList','GetSceneItemList','GetGroupSceneItemList','GetSceneItemEnabled','GetStreamStatus','GetRecordStatus','GetVirtualCamStatus','GetReplayBufferStatus','GetStudioModeEnabled','GetInputMute','GetInputVolume','GetInputAudioMonitorType','GetInputAudioTracks','GetInputSettings','GetInputDefaultSettings','GetCurrentPreviewScene','GetCurrentSceneTransition','GetMediaInputStatus','GetLastReplayBufferReplay']);
+const READS=new Set(['GetVideoSettings','GetSceneTransitionList','GetSceneSceneTransitionOverride','GetSourceScreenshot','GetVersion','GetProfileList','GetSceneList','GetGroupList','GetInputList','GetSceneCollectionList','GetSceneItemList','GetGroupSceneItemList','GetSceneItemEnabled','GetStreamStatus','GetRecordStatus','GetVirtualCamStatus','GetReplayBufferStatus','GetStudioModeEnabled','GetInputMute','GetInputVolume','GetInputAudioMonitorType','GetInputAudioTracks','GetInputSettings','GetInputDefaultSettings','GetCurrentPreviewScene','GetCurrentSceneTransition','GetMediaInputStatus','GetLastReplayBufferReplay']);
 const WRITES=new Set(['SetSceneSceneTransitionOverride','SetCurrentProgramScene','SetInputSettings','SetSceneItemEnabled','SetInputMute','StartStream','StopStream','SetCurrentPreviewScene','TriggerStudioModeTransition','SetStudioModeEnabled','SetInputVolume','StartRecord','StopRecord','PauseRecord','ResumeRecord','StartReplayBuffer','StopReplayBuffer','SaveReplayBuffer','StartVirtualCam','StopVirtualCam','TriggerMediaInputAction']);
 export function validateLivePayload(name:string,data:Record<string,unknown>):void{
   if(!WRITES.has(name))throw new LiveFailure('Unsupported live command.');
@@ -62,6 +62,13 @@ export class LiveObs implements LivePort{
       if(current.key!==guard.destination.key||current.server!==guard.destination.server)throw new LiveFailure('The verified YouTube destination changed. No stream start/stop request was sent.');
     }
     await this.request(name,data);
+  }
+  /** Only the offline installer can call this fixed creation surface; never exposed as renderer RPC. */
+  async installRequest(name:string,data:Record<string,unknown>={}):Promise<Record<string,any>>{
+    if(!['CreateScene','CreateSceneItem','CreateInput','SetSceneItemTransform','GetVideoSettings'].includes(name))throw new LiveFailure('Unzulässige Einrichtungsaktion.');
+    if(name!=='GetVideoSettings'&&(typeof data.sceneName!=='string'||!data.sceneName.startsWith('BCC · ')))throw new LiveFailure('Die Einrichtung darf nur eigene BCC-Szenen anlegen.');
+    if(name==='CreateInput'&&(data.inputKind!=='browser_source'||typeof data.inputName!=='string'||!data.inputName.startsWith('BCC')))throw new LiveFailure('Die Einrichtung darf nur BCC-Browserquellen anlegen.');
+    return this.request(name,data);
   }
   private async request(name:string,data:Record<string,unknown>):Promise<Record<string,any>>{
     const socket=this.socket;if(!socket||!this.authenticated)throw new LiveFailure('OBS is disconnected; use its manual controls.');

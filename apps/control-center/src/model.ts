@@ -1,3 +1,4 @@
+import type {PresentationConfig} from './presentation-model.ts';
 /** Shared contracts. Credentials and raw device configuration are never workspace fields. */
 import type {AudioObservation,AudioSnapshot} from './audio-model.ts';
 import type {ServiceAudioIntent,ServiceAudioStatus} from './service-audio.ts';
@@ -31,6 +32,7 @@ export interface Workspace {
   inventory:Inventory|null; connections:Connection[]; bindings:Bindings;
   /** OBS cross dissolve; omitted by older workspaces means 900 ms. */
   transitionMs?:number;
+  presentation?:PresentationConfig;
   captions:CaptionBindings; services:Service[]; speakers:string[];
   hardwareNotes:{frontInput:string;sideInput:string;audioRoute:string};
   audioObservations:AudioObservation[];

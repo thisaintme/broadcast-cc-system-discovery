@@ -59,3 +59,33 @@ Gefüllte Symbolpfade aus dem gelieferten Prototyp werden als statische, nicht b
 - Neue Tests: Referenzparser, Bearbeitung/Persistenz, bestätigte Zustandsfarben, getrennte YouTube-Belege, Übergangsüberschreibung, Rücklesefehler, Abbruch und neue Szenenbefehle.
 - `scripts/smoke-v107.cjs`: echte Electron-Oberfläche, IPC und authentifizierter synthetischer OBS-WebSocket; kein Zugriff auf reale Konten oder Gemeindegeräte. Der Workflow legt Bericht und Screenshots unter `release/v107` ab.
 - Vor Einsatz: Auf dem Ziel-Mac mit den echten OBS-Zuordnungen alle Übergänge prüfen; DE-/RU-Abschluss einschließlich Abbruch gegen Test-Events abnehmen. Die Prüfung mit synthetischem OBS ersetzt diese Geräteabnahme nicht.
+
+## Fortsetzung · 14.11.2026 · 0.4.0-alpha.1
+
+Die folgenden Kommentare ersetzen die als offen markierten Punkte des ersten Umsetzungsschritts, soweit hier ausdrücklich genannt. Keine pauschale Hardware- oder Designerfreigabe.
+
+### Kommentar 08 · Lokale Präsentationsregie
+Sprecher/Bibelstellen sind nun echte zeitgesteuerte Bauchbinden auf Main. Der Dienst bestätigt Main und den Ton, bevor die Einblendung erscheint. Kapitel, Verse, Lieder mit separaten Refrainseiten, Zwischenbilder sowie Intro/Outro/Gebet werden in lokalen OBS-Browserquellen gerendert. Eine Darstellung ist erst bestätigt, nachdem die zugehörige Browserquelle Schrift, Bilder und Layout geladen hat. Kein optimistisches Häkchen. Die Einrichtung erstellt ausschließlich eigene BCC-Szenen und Quellen bei ausgeschalteter Übertragung/Aufnahme. Vorhandene Szenen, Schriften, Transformationen und Stream-Schlüssel werden nicht überschrieben. Bei Teilfehlern keine automatische Löschung oder Wiederholung.
+
+Der Betrieb benötigt OBS auf demselben Rechner: Browserquellen verbinden sich ausschließlich über 127.0.0.1. Für entferntes OBS ist ein ausdrücklich abgesicherter Dienst nötig; in diesem Release kein öffentlich erreichbarer Render-Endpunkt. Die lokalen Render-Schlüssel bleiben im Hauptprozess und in OBS. HTTP/WebSocket erlauben ausschließlich Darstellung/Bestätigung, niemals Gerätebefehle.
+
+### Kommentar 09 · Quellen, Rechte und Varianten
+Inter und Literata werden lizenzkonform mitgeliefert, keine Font-Verbindung zur Laufzeit. Drei unverändert übernommene, offline verfügbare eBible-Korpora: Schlachter 1951 (CC BY 4.0), Luther 1912 und Elberfelder 1905 (gemeinfrei laut beigelegten Quellenangaben). Prüfsummen, Herkunft und Lizenzbelege sind im Build festgehalten. Die eBible-Verszählung enthält Joel 3 und Maleachi 4 Kapitel; keine stille Umnummerierung zur jeweiligen Druckausgabe. Ausgelassene Verse werden als solche gezeigt, nie erfunden.
+
+Lieder werden aus einer expliziten lokalen JSON-Bibliothek importiert; kein unbekannter Liedtext und keine erfundene Lizenz werden mitgeliefert. Refrain ist eine eigene Seite, Reihenfolge ist konfigurierbar. Das Gemeindelogo und Zwischenbilder werden lokal importiert und sicher normalisiert. **Gestalterische Abweichung:** Die Stock-/Demo-Fotos des Prototyps werden nicht als Voreinstellung übernommen; die Import- und Bildauswahlfunktion ist implementiert. Insbesondere wird das Prototyp-Kamerafoto niemals als aktuelle Kameravorschau benutzt.
+
+### Kommentar 10 · Studio, Vollbild und Einblendung
+Studiomodus ist tatsächlicher OBS-Preview/Program-Betrieb. Kacheln wählen Preview ohne Program-/Tonänderung; Take/Enter prüft unmittelbar vorher dieselbe Vorschau und löst OBS-Transition aus. Tonregeln gelten bei der Übernahme. Externe Vorschauänderungen unterbrechen eine ausstehende Aktion. Gold zeigt Preview, Rot nur frische bestätigte Sendung. Vollbild verwendet dasselbe Pult; Liedseiten-Pille ersetzt dort die normalen Seitenknöpfe. Leserfokus hat 450-ms-Sperre, 1,5-s-Verlassen-Hysterese und 45-s-Inaktivitätsrückkehr.
+
+### Kommentar 11 · Geräte und Russisch
+Implementiert: Web Presenter Ethernet-Protokoll 1.x (TCP 9977), VISCA TCP/UDP-Kamerapresets mit ACK/Completion/Positionsrücklesung, ATEM M/E-0-Tally, X32-Bus-Stummschaltung per OSC und Key-Light-Legacy-HTTP. Unterstützte Profile und Protokollquellen stehen in `V107-DEVICE-PROTOCOLS.md`. Geräte werden ausdrücklich konfiguriert und freigegeben; Prüfungen sind ausschließlich lesend. Keine Autodiscovery darf eine Kamera bewegen oder einen Bus stummschalten. Nicht unterstützte Protokolle, mTLS-only-Leuchten und unbekannte Zustände bleiben gesperrt.
+
+RU-Start prüft gespeicherten Schlüssel, Web-Presenter-Identität, YouTube-Kanal, Event, Sichtbarkeit, Zielgruppe und gebundenes Streamprofil. Encoder-ACK bedeutet nicht Live; tatsächliches Streaming und YouTube-Eingang/Live müssen getrennt bestätigt werden. Ein fehlgeschlagener Start wird nicht wiederholt; „Signal veröffentlichen“ ist eine ausdrückliche Fortsetzung ohne Encoder-Neustart. Ende: YouTube bestätigen, Encoder stoppen, danach optionale gemeinsame Schritte Aufnahme → Kamera-Ruheposition → konfigurierte X32-Busse stumm → Licht aus. Gemeinsame Geräte bleiben an, solange ein anderer Encoder sendet oder der Zustand offen ist. Teilfehler werden pro Schritt sichtbar; keine automatische Wiederholung/Rücknahme.
+
+### Kommentar 12 · Abnahmegrenze und nicht vorgetäuschte Dienste
+Automatisierte Prüfung verwendet authentifizierte synthetische OBS-Server und lokale Protokoll-Fakes. Sie ersetzt weder die Prüfung am Gemeindesystem noch die macOS-Keychain-Abnahme mit echten Konten. Der macOS-Testbuild ist nicht mit einer Apple-Developer-ID signiert/notarisiert. Das Repository enthält keine dafür verwendbaren Zugangsdaten.
+
+Die im breiteren Produkt-Briefing erwähnten Cloud-/Tertius-, Live-Transkriptions-, automatischen Schrifterkennungs- sowie Mail-/Telegram-Dienste haben im übergebenen Material keinen nutzbaren Produktionsdienst/Vertrag mit Zugangsdaten. Diese externen Produkte sind nicht implementiert/deployed und werden nicht als bereit angezeigt. Ebenso werden Zuschauerzahlen und Gerätepegel nur angezeigt, soweit eine echte Integration sie liefert; keine Zufallszahlen aus dem Prototyp. Diese Punkte sind eine verbleibende Produktintegration, nicht durch einen erfolgreichen DMG-Build erledigt.
+
+### Prüfumfang dieser Fortsetzung
+Lokal: TypeScript, vollständiger Bundle-Build und 369 Regressionstests bestanden. Neue Tests decken alle drei Bibelkorpora, Liedpersistenz, Kapitelauswahl, Renderkanal und Quellenbindung, ungültige Eingaben, Studio/Take, Web-Presenter-Zielprüfung, Abbruch/NACK, VISCA-Abschluss, X32-Readback, Key-Light-Readback und sichere Ende-Blockade ab. Zusätzlich native Electron-Prüfung der bestehenden Regie und der neuen OBS-Browserdarstellung; genaue Resultate/Build-Commit werden als CI-Artefakte abgelegt.
