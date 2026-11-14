@@ -103,7 +103,9 @@ jobs:
           retention-days: 30
   macos:
     needs: [source, validate]
-    runs-on: macos-14
+    # macos-14 was retired from GitHub Actions on 2026-11-02.
+    # Pin a supported OS rather than inheriting migrations via macos-latest.
+    runs-on: macos-15
     timeout-minutes: 35
     env:
       CSC_IDENTITY_AUTO_DISCOVERY: 'false'
