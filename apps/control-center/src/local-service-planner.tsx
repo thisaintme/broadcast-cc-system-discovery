@@ -24,6 +24,12 @@ export function LocalServicePlanner({s,api,locked,onSaved,onSelect}:{
   let entries:ReturnType<typeof planLocalServices>=[],validation='';
   try{entries=planLocalServices(plan);}catch(e){validation=clean(e);}
   const changed=()=>{setRequestId(crypto.randomUUID());setNotice('');setError('');};
+  async function persist(change:Parameters<LiveAppBridge['changeServices']>[0]){
+    await api.changeServices(change);
+    // Mutation replies were captured while the main-process action was busy.
+    // Read again after completion so that an old reply cannot relock the form.
+    return api.site();
+  }
   async function run(action:()=>Promise<void>){
     if(flight.current||disabled)return;flight.current=true;setPending(true);setError('');setNotice('');
     try{await action();}catch(e){setError(clean(e));}finally{flight.current=false;setPending(false);}
@@ -31,7 +37,7 @@ export function LocalServicePlanner({s,api,locked,onSaved,onSelect}:{
   return <section className="v107-local-calendar" aria-label="Lokale Sendetermine">
     <article><h2>Sendung planen</h2><p>Einzeltermin oder Reihe für die Auswahl am Sendepult.</p>
       <form id="local-service-form" onSubmit={e=>{e.preventDefault();if(validation)return;void run(async()=>{
-        const next=await api.changeServices({type:'plan',plan});onSaved(next);
+        const next=await persist({type:'plan',plan});onSaved(next);
         const added=next.workspace.services.filter(x=>!s.workspace.services.some(old=>old.id===x.id)).length;
         setNotice(added===0?'Diese Termine sind bereits im lokalen Kalender.':`${added===1?'1 Termin':`${added} Termine`} lokal gespeichert. Wählen Sie unten „Für Sendung auswählen“.`);
       });}}>
@@ -52,7 +58,7 @@ export function LocalServicePlanner({s,api,locked,onSaved,onSelect}:{
     <article><h2>Geplante Sendungen</h2>{s.workspace.services.length===0&&<p>Noch keine Termine gespeichert.</p>}
       {s.workspace.services.map(x=><div className="list-row" key={x.id}><div><strong>{x.title}</strong><p>{formatBerlinDate(x.startsAt)}</p>{x.id===s.live.selectedService&&<small>Für die aktuelle Sendung ausgewählt</small>}</div>
         <div className="toolbar"><button type="button" data-select-service={x.id} disabled={disabled} onClick={()=>void run(()=>onSelect(x.id))}>Für Sendung auswählen</button>
-          <button type="button" data-remove-service={x.id} disabled={disabled||x.id===s.live.selectedService} aria-label={`Termin ${x.title} entfernen`} title={x.id===s.live.selectedService?'Der ausgewählte Termin ist geschützt.':'Entfernt nur den lokalen Termin.'} onClick={()=>void run(async()=>{onSaved(await api.changeServices({type:'remove',id:x.id}));setNotice('Termin lokal entfernt.');})}>Entfernen</button></div>
+          <button type="button" data-remove-service={x.id} disabled={disabled||x.id===s.live.selectedService} aria-label={`Termin ${x.title} entfernen`} title={x.id===s.live.selectedService?'Der ausgewählte Termin ist geschützt.':'Entfernt nur den lokalen Termin.'} onClick={()=>void run(async()=>{onSaved(await persist({type:'remove',id:x.id}));setNotice('Termin lokal entfernt.');})}>Entfernen</button></div>
       </div>)}
     </article>
   </section>;

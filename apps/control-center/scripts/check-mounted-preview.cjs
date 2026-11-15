@@ -10,7 +10,7 @@ const {createServer}=require('node:net');
 const {setTimeout:delay}=require('node:timers/promises');
 const WS=require('ws');
 async function freePort(){const s=createServer();await new Promise((ok,no)=>{s.once('error',no);s.listen(0,'127.0.0.1',ok);});const port=s.address().port;await new Promise(ok=>s.close(ok));return port;}
-async function until(fn,label){const end=Date.now()+25000;while(Date.now()<end){const result=await fn();if(result)return result;await delay(150);}throw Error('Timed out: '+label);}
+async function until(fn,label,timeout=25000){const end=Date.now()+timeout;while(Date.now()<end){const result=await fn();if(result)return result;await delay(150);}throw Error('Timed out: '+label);}
 function evaluate(target,expression){return new Promise((ok,no)=>{const ws=new WS(target.webSocketDebuggerUrl,{handshakeTimeout:4000});const timer=setTimeout(()=>{ws.terminate();no(Error('Renderer timed out'));},5000);const done=(fn,value)=>{clearTimeout(timer);ws.terminate();fn(value);};ws.once('error',e=>done(no,e));ws.once('open',()=>ws.send(JSON.stringify({id:1,method:'Runtime.evaluate',params:{expression,awaitPromise:true,returnByValue:true}})));ws.on('message',data=>{const r=JSON.parse(data);if(r.id!==1)return;if(r.error||r.result.exceptionDetails)return done(no,Error(r.error?.message||r.result.exceptionDetails?.exception?.description||'Renderer exception'));done(ok,r.result.result.value);});});}
 function verifyNativePrebuilds(binary){
   // FreeType distributes both CPU variants in every package. They must remain
@@ -49,11 +49,15 @@ async function main(){
     const saveLocal=async()=>{await until(()=>d(`!document.querySelector('#add-live-service').disabled`),'local calendar ready');await d(`document.querySelector('#add-live-service').click()`);};
     await localField('new-service-date','2020-01-05');await localField('new-service-time','11:00');await saveLocal();
     await until(()=>d(`window.liveService.site().then(s=>!s.live.busy&&s.workspace.services.length===1)`),'packaged local single save');
+    assert.equal(await d(`window.liveService.site().then(s=>s.live.busy)`),false);
+    await until(()=>d(`!document.querySelector('#add-live-service').disabled`),'local form unlocked after single save',1200);
     await localField('new-service-date','2027-03-14');await d(`document.querySelector('#local-service-repeat').click()`);await localField('local-service-count','4');await saveLocal();
     await until(()=>d(`window.liveService.site().then(s=>!s.live.busy&&s.workspace.services.length===5)`),'packaged local series save');
+    await until(()=>d(`!document.querySelector('#add-live-service').disabled`),'local form unlocked after series save',1200);
     const local=await d(`window.liveService.site().then(s=>s.workspace.services)`);
     assert.deepEqual(local.slice(1).map(x=>x.startsAt),['2027-03-14T10:00:00.000Z','2027-03-21T10:00:00.000Z','2027-03-28T09:00:00.000Z','2027-04-04T09:00:00.000Z']);
     await saveLocal();await until(()=>d(`document.querySelector('#local-service-notice')?.textContent.includes('bereits')`),'idempotent packaged local save');
+    await until(()=>d(`!document.querySelector('#add-live-service').disabled`),'local form unlocked after repeated save',1200);
     await until(()=>d(`!document.querySelector('[data-select-service]').disabled`),'local selection enabled');
     await d(`document.querySelector('[data-select-service="'+${JSON.stringify(local[3].id)}+'"]').click()`);
     await until(()=>d(`document.querySelector('#bcc-content').dataset.tab==='live'`),'packaged return to desk');

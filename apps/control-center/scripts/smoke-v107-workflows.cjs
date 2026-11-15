@@ -35,14 +35,20 @@ async function finish(code,error){
     await wait("document.getElementById('local-service-notice')?.textContent.includes('1 Termin lokal gespeichert')");
     let s=await api('site()');const single=s.workspace.services[0];assert.equal(single.title,'20200105 - Gottesdienst');assert.equal(single.startsAt,'2020-01-05T10:00:00.000Z');
     assert.equal(JSON.parse(fs.readFileSync(file,'utf8')).services.length,1);assert.equal(peer.state.writes.length,0);
+    await wait("!document.getElementById('add-live-service').disabled",1200);
     passed.push('Create an already-started local single service through the UI without OBS or YouTube');
     await field('new-service-date','2027-03-14');await click('#local-service-repeat');await field('local-service-count','4');
     await click('#add-live-service');await wait("window.liveService.site().then(s=>!s.live.busy&&s.workspace.services.length===5)");
-    s=await api('site()');const planned=s.workspace.services.filter(x=>x.id!==single.id);
+    await wait("!document.getElementById('add-live-service').disabled",1200);s=await api('site()');const planned=s.workspace.services.filter(x=>x.id!==single.id);
     assert.deepEqual(planned.map(x=>x.startsAt),['2027-03-14T10:00:00.000Z','2027-03-21T10:00:00.000Z','2027-03-28T09:00:00.000Z','2027-04-04T09:00:00.000Z']);
     await click('#add-live-service');await wait("document.getElementById('local-service-notice')?.textContent.includes('bereits im lokalen Kalender')");
-    assert.equal((await api('site()')).workspace.services.length,5);assert.equal(peer.state.writes.length,0);await capture('local-calendar');
-    passed.push('Create a four-week local series across DST; repeated save does not duplicate');
+    await wait("!document.getElementById('add-live-service').disabled",1200);assert.equal((await api('site()')).workspace.services.length,5);assert.equal(peer.state.writes.length,0);await capture('local-calendar');
+    await api(`changeServices({type:'add',service:{id:'remove-test',title:'Synthetischer Löschtest',startsAt:'2030-01-01T10:00:00Z'}})`);
+    await click('[data-remove-service="remove-test"]');
+    await wait("window.liveService.site().then(s=>s.workspace.services.length===5&&!s.live.busy)");
+    await wait("!document.getElementById('add-live-service').disabled",1200);
+    assert.equal(JSON.parse(fs.readFileSync(file,'utf8')).services.some(x=>x.id==='remove-test'),false);
+    passed.push('Four-week local series across DST; idempotent saves and removal immediately unlock the form');
     // Genuine disk failure: rename cannot overwrite a directory. Never mark this as saved.
     fs.renameSync(file,file+'.kept');fs.mkdirSync(file);
     try{
