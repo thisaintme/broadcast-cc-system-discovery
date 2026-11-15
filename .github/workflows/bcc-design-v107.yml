@@ -28,18 +28,18 @@ jobs:
         run: |
           set -euo pipefail
           if test -d .github/bcc-v107-import; then
-            test "$(git rev-parse HEAD^)" = '766efba19f84580e40b5c65bb3aa6eab33895e32'
+            test "$(git rev-parse HEAD^)" = '0fd480c7bb1637049f2db82e14ad1236b9b888ae'
             test -z "$(git diff HEAD^ HEAD -- apps/control-center)"
             python3 - <<'PY'
           import pathlib, hashlib, lzma, subprocess
           parts=sorted(pathlib.Path('.github/bcc-v107-import').glob('*.xzpart'))
-          assert len(parts)==4
+          assert len(parts)==1
           payload=b''.join(p.read_bytes() for p in parts)
-          assert len(payload)==15964
-          assert hashlib.sha256(payload).hexdigest()=='cb39dc5fb539b5e4cb04393b4aaedbcf265797035b5a7b715cbd3094428bd97c'
+          assert len(payload)==2288
+          assert hashlib.sha256(payload).hexdigest()=='003e44b9a3b0402a0c166e19eb29d542d73007f4e6633f955f736d9a4cdb8283'
           patch=lzma.decompress(payload)
-          assert len(patch)==56924
-          assert hashlib.sha256(patch).hexdigest()=='e85a8067668fb8515a8024c796d06cfad159ff69f16347f40d3b2377a878a602'
+          assert len(patch)==6311
+          assert hashlib.sha256(patch).hexdigest()=='8736efadd2b54fb979d0657113fcac401db69956d09a27d837f406eda3aa9d2d'
           current=None
           for line in patch.decode().splitlines():
             if line.startswith('diff --git '):
@@ -58,7 +58,7 @@ jobs:
             git rm -r .github/bcc-v107-import
             git config user.name 'github-actions[bot]'
             git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-            git commit -m 'fix: activate scenes directly and decouple local service planning (0.4.0-alpha.2)'
+            git commit -m 'fix: read completed calendar state and test immediate form readiness'
             git push origin HEAD:refs/heads/feat/bcc-design-v107
           fi
           echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
