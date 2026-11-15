@@ -54,3 +54,15 @@ body:has(.v107-shell){background:var(--v-bg)}
 /* Reset the legacy renderer's global element rules inside the new layout. */
 .v107-shell .v107-navbar{margin-bottom:0}.v107-shell small{margin-top:0}.v107-shell .v107-panels{position:static;top:auto;height:auto;min-height:0;background:transparent;padding:0;color:var(--v-fg)}.v107-shell details{border-color:var(--v-line)}.v107-shell .v107-device-note{padding:8px;border:0}.v107-shell .v107-footer{margin-top:16px;border-color:var(--v-line)}
 @media(min-width:851px){.v107-monitor--program{max-height:max(270px,calc(100dvh - 560px))}}
+
+/* Local calendar is the primary planning route; YouTube stays explicitly separate. */
+.v107-local-calendar{display:grid;gap:16px}.v107-local-calendar article{margin:0}
+.v107-local-calendar .two-col{display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:14px}
+.v107-local-calendar #local-service-preview{max-height:220px;overflow:auto;margin:12px 0;font-size:13px;line-height:1.8}
+.v107-local-calendar .list-row{flex-wrap:wrap;gap:12px}.v107-local-calendar .toolbar{margin:0}
+.v107-youtube-planning{margin:20px 0}.v107-youtube-planning>summary{cursor:pointer;font-weight:600;padding:12px 0}
+
+.v107-local-calendar fieldset{border:1px solid var(--v-line);border-radius:12px;padding:14px;margin:10px 0}
+.v107-local-calendar .series-weekdays{display:flex;flex-wrap:wrap;gap:16px;margin:6px 0 14px}
+.v107-local-calendar .check-label{display:flex;align-items:center;gap:8px}
+.v107-local-calendar input[type=checkbox]{width:18px;height:18px;margin:0;flex-shrink:0}

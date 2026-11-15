@@ -44,6 +44,23 @@ async function main(){
     assert.equal(await d(`document.querySelector('#live-obs-password').type`),'password');
     await d(`document.querySelector('#nav-schedule').click()`);
     await until(()=>d(`document.body.innerText.includes('Sendereihe')`),'packaged reusable series screen');
+    await until(()=>d(`!!document.querySelector('#local-service-form')`),'packaged local calendar');
+    const localField=async(id,value)=>d(`(()=>{const e=document.getElementById(${JSON.stringify(id)});Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set.call(e,${JSON.stringify(value)});e.dispatchEvent(new Event('input',{bubbles:true}));})()`);
+    const saveLocal=async()=>{await until(()=>d(`!document.querySelector('#add-live-service').disabled`),'local calendar ready');await d(`document.querySelector('#add-live-service').click()`);};
+    await localField('new-service-date','2020-01-05');await localField('new-service-time','11:00');await saveLocal();
+    await until(()=>d(`window.liveService.site().then(s=>!s.live.busy&&s.workspace.services.length===1)`),'packaged local single save');
+    await localField('new-service-date','2027-03-14');await d(`document.querySelector('#local-service-repeat').click()`);await localField('local-service-count','4');await saveLocal();
+    await until(()=>d(`window.liveService.site().then(s=>!s.live.busy&&s.workspace.services.length===5)`),'packaged local series save');
+    const local=await d(`window.liveService.site().then(s=>s.workspace.services)`);
+    assert.deepEqual(local.slice(1).map(x=>x.startsAt),['2027-03-14T10:00:00.000Z','2027-03-21T10:00:00.000Z','2027-03-28T09:00:00.000Z','2027-04-04T09:00:00.000Z']);
+    await saveLocal();await until(()=>d(`document.querySelector('#local-service-notice')?.textContent.includes('bereits')`),'idempotent packaged local save');
+    await until(()=>d(`!document.querySelector('[data-select-service]').disabled`),'local selection enabled');
+    await d(`document.querySelector('[data-select-service="'+${JSON.stringify(local[3].id)}+'"]').click()`);
+    await until(()=>d(`document.querySelector('#bcc-content').dataset.tab==='live'`),'packaged return to desk');
+    assert.equal(await d(`window.liveService.site().then(s=>s.live.selectedService)`),local[3].id);
+    assert.equal(await d(`document.querySelector('#live-service').value`),local[3].id);
+    assert.equal(await d(`document.querySelector('#v107-studio-mode').checked`),false);
+    console.log('PASS mounted DMG local planning: single + four-date series, Berlin DST, idempotent save, direct broadcast selection; zero account setup.');
     // V107 exposes YouTube management through the single visible tools-menu path.
     await d(`document.querySelector('button[aria-controls="v107-tools"]').click()`);
     await until(()=>d(`!![...document.querySelectorAll('#v107-tools button')].find(b=>b.textContent==='YouTube-Verwaltung öffnen'&&b.getClientRects().length>0)`),'visible YouTube tools-menu action');
@@ -65,7 +82,7 @@ async function main(){
     assert.match(await m(`document.querySelector('.preview').textContent`),/DE: unlisted · RU: unlisted/);
     const rows=await m(`[...document.querySelectorAll('.preview .dates > div')].map(e=>e.textContent)`);assert.equal(new Set(rows).size,8);for(const row of rows){const [date,time]=row.split(' · ');assert.equal(time,'11:00');assert.equal(new Date(date+'T12:00:00Z').getUTCDay(),0);}
     assert.equal(await m(`window.streamManagement.panel().then(p=>p.state.occurrences.length)`),0);
-    console.log('PASS mounted DMG: V107 desk, offline Bible, local fonts → visible YouTube tools menu → both accounts → eight Sundays at 11:00 / sixteen unlisted event previews. Nothing scheduled or transmitted.');
+    console.log('PASS mounted DMG: V107 desk, offline Bible, local fonts → visible YouTube tools menu → both accounts → eight Sundays at 11:00 / sixteen unlisted event previews. No YouTube events created and nothing transmitted. Local calendar data stays in the disposable test profile.');
   }finally{if(!exited)child.kill('SIGTERM');await Promise.race([exit,delay(2000)]);if(!exited){child.kill('SIGKILL');await exit;}await rm(profile,{recursive:true,force:true,maxRetries:4});}
 }
 main().catch(e=>{console.error(e);process.exitCode=1;});

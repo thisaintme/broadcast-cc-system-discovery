@@ -36,7 +36,7 @@ export class LiveController{
   get authorized():boolean{return this.permissions.scenes||this.permissions.audio||this.permissions.stream||this.permissions.operator===true;}
   get busy():boolean{return this.working;}
   ticket():number{return this.generation;}
-  private serviceId():string{return this.selected||selectService(this.workspace());}
+  private serviceId():string{return this.workspace().services.some(s=>s.id===this.selected)?this.selected:selectService(this.workspace());}
   snapshot():LiveSnapshot{
     const o=this.observed,fresh=this.port.isConnected()&&o.checkedAt!==null&&this.clock.now()-o.checkedAt<6000;
     const observation=fresh?{...o,muted:this.working&&this.audioChanging?null:o.muted,scenes:[...o.scenes],warnings:[...o.warnings]}:{...o,streaming:null,reconnecting:null,muted:null,warnings:[...o.warnings,'Status is disconnected, pending verification or stale; not confirmed off.']};
@@ -66,7 +66,8 @@ export class LiveController{
     try{
       await this.port.connect(this.workspace().obsUrl,password);
       const version=await this.port.read('GetVersion');this.available=new Set(Array.isArray(version.availableRequests)?version.availableRequests.filter((x:unknown)=>typeof x==='string'):[]);
-      this.selected=selectService(this.workspace());await this.refresh();
+      // Keep an explicit valid local selection when connecting/reconnecting OBS.
+      this.selected=this.serviceId();await this.refresh();
       if(this.port.isConnected())this.interval=setInterval(()=>{void this.refresh().catch(()=>{});},2000);
       this.notice='Connected in Observe only mode. Existing stream, scene and mute state were not changed.';
       await this.record('connect','observed',this.notice);this.emit();
@@ -219,6 +220,9 @@ export class LiveController{
         pendingProgram=target;permittedPrograms.add(pendingProgram);this.expected.set('program',{value:pendingProgram,until:this.clock.now()+15000});
       }
       if(name==='SetCurrentProgramScene'){
+        // OBS performs a transition in Studio Mode and may swap the old Program
+        // into Preview. That exact echo is ours, not an external interruption.
+        if(this.observed.studio===true)this.expected.set('preview',{value:this.observed.program,until:this.clock.now()+12000});
         pendingProgram=String(data.sceneName);permittedPrograms.add(pendingProgram);
         this.expected.set('program',{value:data.sceneName,until:this.clock.now()+12000});
       }

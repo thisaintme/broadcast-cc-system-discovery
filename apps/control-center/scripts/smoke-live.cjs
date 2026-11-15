@@ -43,7 +43,7 @@ async function finish(code,error){if(finished)return;finished=true;clearTimeout(
         assert.equal(await evaluate("document.getElementById('new-service-time').disabled"),false);
         assert.equal(await evaluate("document.getElementById('new-live-speaker').disabled"),true);
         assert.equal(await evaluate("document.querySelector('[data-remove-service=one]').disabled"),true);
-        await field('service-title-preset','Andacht',true);await field('new-service-time','2026-10-27T12:00');
+        await field('service-title-preset','Andacht',true);await field('new-service-date','2026-10-27');await field('new-service-time','12:00');
         await click('add-live-service');await wait("window.liveService.site().then(s=>s.workspace.services.length===3 && !s.live.busy)");
         const firstSchedule=await evaluate('window.liveService.site()');
         assert.equal(firstSchedule.workspace.services[1].title,'20261027 - Andacht');
@@ -60,7 +60,7 @@ async function finish(code,error){if(finished)return;finished=true;clearTimeout(
         const injectionError=await evaluate("window.liveService.changeServices({type:'add',service:{id:'bad',title:'Bad',startsAt:'2026-11-01T10:00:00Z'},bindings:{audioInput:'Other input'}}).then(()=>'',e=>e.message)");assert.match(injectionError,/Only service schedule fields/);
         assert.equal(await evaluate("window.liveService.site().then(s=>window.liveService.saveWorkspace(s.workspace)).then(()=>false,()=>true)"),true);
         // A second add merges with the first; remove an unselected entry using the actual UI.
-        await field('new-service-time','2026-11-08T12:00');await click('add-live-service');
+        await field('new-service-date','2026-11-08');await field('new-service-time','12:00');await click('add-live-service');
         await wait("window.liveService.site().then(s=>s.workspace.services.length===4 && !s.live.busy)");
         const extra=await evaluate("window.liveService.site().then(s=>s.workspace.services.find(x=>x.title==='20261108 - Andacht'))");
         await evaluate(`document.querySelector(${JSON.stringify('[data-remove-service="'+extra.id+'"]')}).click()`);
@@ -90,7 +90,7 @@ async function finish(code,error){if(finished)return;finished=true;clearTimeout(
         const finalWrites=peer.state.writes.length;
         await click('nav-setup');await field('live-audio-input','Other input',true);
         await click('nav-schedule');await field('service-title-preset','custom',true);
-        await field('new-service-custom-title','Custom gathering');await field('new-service-time','2026-11-15T12:00');await click('add-live-service');
+        await field('new-service-custom-title','Custom gathering');await field('new-service-date','2026-11-15');await field('new-service-time','12:00');await click('add-live-service');
         await wait("window.liveService.site().then(s=>s.workspace.services.length===4 && !s.live.busy)");
         await click('nav-setup');assert.equal(await evaluate("document.getElementById('live-audio-input').value"),'Other input');
         assert.equal(await evaluate("window.liveService.site().then(s=>s.workspace.bindings.audioInput)"),'Microphone');

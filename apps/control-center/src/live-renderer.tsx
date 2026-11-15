@@ -1,3 +1,4 @@
+import {LocalServicePlanner} from './local-service-planner.tsx';
 import {PresentationSettings} from './v107-settings.tsx';
 import React,{useEffect,useRef,useState} from 'react';
 import {createRoot} from 'react-dom/client';
@@ -5,8 +6,7 @@ import type {Workspace,Role} from './model.ts';
 import {DESK_ROLES} from './model.ts';
 import type {LiveAppBridge,LiveSiteSnapshot} from './live-app.ts';
 import type {LiveCommand,LivePermissions,LivePhase,JournalEntry} from './live-contract.ts';
-import type {ServiceChange} from './live-schedule.ts';
-import {noPermissions,serviceTitle} from './live-contract.ts';
+import {noPermissions} from './live-contract.ts';
 import {candidates} from './workspace.ts';
 import {OperatorPanel} from './obs-operator-panel.tsx';
 import {Overview, CuePanel, Icon, Badge} from './live-design.tsx';
@@ -27,7 +27,7 @@ function App(){
   const[panel,setPanel]=useState<''|'speaker'|'bible'|'outro'>('');
   const[password,setPassword]=useState(''),[error,setError]=useState(''),[notice,setNotice]=useState(''),[pending,setPending]=useState(false),[dirty,setDirty]=useState(false);
   const[permissions,setPermissions]=useState<LivePermissions>(noPermissions()),[speaker,setSpeaker]=useState(''),[reference,setReference]=useState('Johannes Kap. 3 ab Vers 16');
-  const[preset,setPreset]=useState('Gottesdienst'),[custom,setCustom]=useState(''),[when,setWhen]=useState(''),[newSpeaker,setNewSpeaker]=useState('');
+  const[newSpeaker,setNewSpeaker]=useState('');
   const[log,setLog]=useState<JournalEntry[]>([]),[now,setNow]=useState(Date.now()),[received,setReceived]=useState(Date.now());
   useEffect(()=>{const update=(next:LiveSiteSnapshot)=>{set(next);const receivedAt=Date.now();setReceived(receivedAt);setNow(receivedAt);setDraft(d=>d||next.workspace);};void api.site().then(update).catch(()=>setError('Der lokale App-Status konnte nicht gelesen werden.'));const off=api.onSite(update),timer=setInterval(()=>setNow(Date.now()),250);return()=>{off();clearInterval(timer);};},[]);
   useEffect(()=>{if(s?.credentials)setAutoConnect(s.credentials.autoConnect);},[s?.credentials?.autoConnect]);
@@ -35,7 +35,7 @@ function App(){
   async function interrupt(fn:()=>Promise<unknown>){try{await fn();}catch(e){setError(e instanceof Error?e.message:'Die Aktion wurde nicht bestätigt.');}}
   if(!s||!draft)return <main><h1>Broadcast Control Center</h1><p>Lokaler Arbeitsbereich wird geöffnet …</p><p role="alert">{error}</p></main>;
   const w=s.workspace,l=s.live,o=l.observation;
-  const authorized=l.permissions.scenes||l.permissions.audio||l.permissions.stream||l.permissions.operator===true,locked=pending||l.busy,editing=!authorized&&!locked,scheduleEditing=!locked;
+  const authorized=l.permissions.scenes||l.permissions.audio||l.permissions.stream||l.permissions.operator===true,locked=pending||l.busy,editing=!authorized&&!locked;
   const fresh=hasFreshTelemetry(l,now,received);
   const status=transmissionStatus(l,fresh);
   const selected=w.services.find(x=>x.id===l.selectedService),next=nextService(w.services,l.selectedService);
@@ -45,9 +45,12 @@ function App(){
   function binding(key:string,value:unknown){edit({...draft!,bindings:{...draft!.bindings,[key]:value,confirmed:false},captions:{...draft!.captions,confirmed:false}});}
   function chooseGroup(name:string){const node=w.inventory?.nodes.find(n=>n.name===name&&n.type==='group'),pool=node?.items.filter(i=>i.kind?.startsWith('text_')).map(i=>i.source)||[];edit({...draft!,captions:{...draft!.captions,speakerGroup:name,speakerPool:pool,speakerSources:Object.fromEntries(w.speakers.map(n=>[n,pool.includes(n)?n:''])),confirmed:false}});}
   function save(work:Workspace){return act(()=>api.saveWorkspace(work),true);}
-  async function changeServices(change:ServiceChange):Promise<void>{
-    const next=await api.changeServices(change);setDraft(d=>d?{...d,services:next.workspace.services}:d);
-    setNotice('Termin lokal gespeichert. Auswahl, Freigaben und OBS-Ausgabe bleiben unverändert.');
+  function calendarSaved(next:LiveSiteSnapshot){
+    set(next);const at=Date.now();setReceived(at);setNow(at);
+    setDraft(d=>d?{...d,services:next.workspace.services}:d);
+  }
+  async function selectLocalService(id:string){
+    await api.selectService(id);calendarSaved(await api.site());setPanel('');setTab('live');
   }
   function command(c:LiveCommand,value?:string){return act(()=>api.command(c,value));}
   function reasons(c:LiveCommand,extra=''){return [...l.reasons[c],...(!fresh?['Aktueller OBS-Status fehlt.']:[]),...(extra?[extra]:[])].map(operatorMessage);}
@@ -97,12 +100,9 @@ function App(){
         <details><summary>Szenen und Gruppen prüfen</summary>{w.inventory?.nodes.map(n=><details key={n.name}><summary>{n.name} · {n.type}</summary>{n.items.map(i=><p key={i.id}>{i.enabled?'●':'○'} {i.source} · {i.kind||'container'}</p>)}</details>)}</details>
       </div>}
       {tab==='schedule'&&<>
-        <SeriesPlanner manager={manager} openManagement={()=>navigate('youtube')}/>
-        <p className="notice" id="live-schedule-help">Termine können auch während einer Übertragung ergänzt werden. Speichern ändert nur den lokalen Kalender, nicht OBS oder YouTube. Auswahl und Rückkehr-Timer bleiben erhalten. Eingabe: Zeitzone dieses Geräts. Anzeige und Datum im Titel: Europe/Berlin.</p>
-        {locked&&<p role="status" className="hint">Eine Aktion wird abgeschlossen. Danach ist die Terminplanung wieder verfügbar.</p>}
-        <div className="two-col"><article><h2>Lokalen Termin hinzufügen</h2><label>Titelvorlage<select id="service-title-preset" disabled={!scheduleEditing} value={preset} onChange={e=>setPreset(e.target.value)}><option>Gottesdienst</option><option>Andacht</option><option value="custom">Eigener Titel</option></select></label>{preset==='custom'&&<label>Eigener Titel<input id="new-service-custom-title" disabled={!scheduleEditing} value={custom} maxLength={220} onChange={e=>setCustom(e.target.value)}/></label>}<label>Datum und Uhrzeit<input id="new-service-time" disabled={!scheduleEditing} type="datetime-local" value={when} onChange={e=>setWhen(e.target.value)}/></label><button id="add-live-service" disabled={!scheduleEditing||!when||!(preset==='custom'?custom.trim():preset)} onClick={()=>void act(async()=>{const startsAt=new Date(when).toISOString(),title=serviceTitle(preset==='custom'?custom:preset,startsAt);await changeServices({type:'add',service:{id:crypto.randomUUID(),title,startsAt}});setWhen('');})}>Nur im lokalen Kalender speichern</button><small>Der Folgetermin wird sofort in der App aktualisiert. Der OBS-Outro-Text ändert sich erst beim bewussten Ausführen des Outros.</small></article>
-          <article><h2>Sprecher hinzufügen</h2>{authorized&&<p className="hint">Änderungen an Sprechern betreffen die Einblendungen und erfordern die Abgabe der Live-Steuerung. Neue Termine können weiterhin ergänzt werden.</p>}<label>Anzeigename<input id="new-live-speaker" disabled={!editing} value={newSpeaker} maxLength={240} onChange={e=>setNewSpeaker(e.target.value)}/></label><button disabled={!editing||!newSpeaker.trim()} onClick={()=>void act(async()=>{await api.saveWorkspace({...w,speakers:[...w.speakers,newSpeaker.trim()]});setNewSpeaker('');},true)}>Sprecher hinzufügen</button>{w.speakers.map(n=><div className="list-row" key={n}><span>{n}</span><button disabled={!editing} onClick={()=>void save({...w,speakers:w.speakers.filter(x=>x!==n)})}>Entfernen</button></div>)}</article></div>
-        <article><h2>Geplante Termine</h2>{w.services.length===0&&<p className="bcc-secondary">Noch keine Termine gespeichert.</p>}{w.services.map(x=><div className="list-row" key={x.id}><div><b>{x.title}</b><p>{date(x.startsAt)}</p>{x.id===l.selectedService&&<small>Ausgewählter Termin · vor Entfernen geschützt.</small>}</div><button data-remove-service={x.id} aria-label={`Termin ${x.title} entfernen`} title={x.id===l.selectedService?'Der ausgewählte Termin kann nicht entfernt werden.':locked?'Warten Sie, bis die laufende Aktion abgeschlossen ist.':'Entfernt nur diesen Termin aus der lokalen Planung.'} disabled={!scheduleEditing||x.id===l.selectedService} onClick={()=>void act(()=>changeServices({type:'remove',id:x.id}))}>Entfernen</button></div>)}</article>
+        <LocalServicePlanner s={s} api={api} locked={locked} onSaved={calendarSaved} onSelect={selectLocalService}/>
+        <details className="v107-youtube-planning"><summary>YouTube-Termine und Sendereihen verwalten</summary><p>Dieser separate Bereich erstellt und verwaltet YouTube-Events. Für die lokale Sendungsauswahl oben ist keine Kontoverbindung erforderlich.</p><SeriesPlanner manager={manager} openManagement={()=>navigate('youtube')}/></details>
+        <article><h2>Sprecher hinzufügen</h2>{authorized&&<p className="hint">Änderungen an Sprechern betreffen die Einblendungen und erfordern die Abgabe der Live-Steuerung. Neue Termine können weiterhin ergänzt werden.</p>}<label>Anzeigename<input id="new-live-speaker" disabled={!editing} value={newSpeaker} maxLength={240} onChange={e=>setNewSpeaker(e.target.value)}/></label><button disabled={!editing||!newSpeaker.trim()} onClick={()=>void act(async()=>{await api.saveWorkspace({...w,speakers:[...w.speakers,newSpeaker.trim()]});setNewSpeaker('');},true)}>Sprecher hinzufügen</button>{w.speakers.map(n=><div className="list-row" key={n}><span>{n}</span><button disabled={!editing} onClick={()=>void save({...w,speakers:w.speakers.filter(x=>x!==n)})}>Entfernen</button></div>)}</article>
       </>}
       {tab==='log'&&<article><h2>Lokales Aktionsprotokoll</h2><p>Enthält Aktionen und bereinigte Ergebnisse, keine Passwörter oder Stream-Schlüssel. Bleibt nach Neustarts erhalten und wird lokal rotiert.</p><div className="toolbar"><button disabled={locked} onClick={()=>void act(async()=>setLog(await api.journal()))}>Protokoll aktualisieren</button><button disabled={locked} onClick={()=>void act(async()=>setNotice(await api.exportJournal()))}>Protokoll exportieren …</button></div>{log.length===0&&<p className="bcc-secondary">Keine Einträge geladen. Aktualisieren Sie das Protokoll.</p>}{log.map((e,i)=><div className="list-row live-log" key={i}><time>{new Date(e.at).toLocaleString()}</time><span><b>{e.action} · {e.stage}</b><br/>{e.detail}</span></div>)}</article>}
       </ControlShell>;
