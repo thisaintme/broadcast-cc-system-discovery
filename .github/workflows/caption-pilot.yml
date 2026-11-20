@@ -1,0 +1,51 @@
+name: Caption pilot rehearsal and macOS preview
+on:
+  pull_request:
+    paths: ['apps/control-center/captions/**','apps/control-center/tests/caption-pilot.test.mjs','.github/workflows/caption-pilot.yml','apps/control-center/scripts/build.mjs','apps/control-center/package.json']
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: caption-rehearsal-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  rehearsal:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    defaults:
+      run:
+        working-directory: apps/control-center
+    steps:
+      - uses: actions/checkout@v4
+        with: {persist-credentials: false}
+      - uses: actions/setup-node@v4
+        with: {node-version: '24'}
+      - run: node --test tests/caption-pilot.test.mjs && python3 -m py_compile captions/recognize.py
+      - run: npm ci --no-audit --no-fund && npm run assets && npm run typecheck && npm run build && npm test
+      - uses: actions/upload-artifact@v4
+        with:
+          name: caption-rehearsal-source
+          path: |
+            apps/control-center/captions/
+            apps/control-center/tests/caption-pilot.test.mjs
+          retention-days: 14
+  mac-preview:
+    needs: rehearsal
+    runs-on: macos-15
+    timeout-minutes: 30
+    defaults:
+      run:
+        working-directory: apps/control-center
+    steps:
+      - uses: actions/checkout@v4
+        with: {persist-credentials: false}
+      - uses: actions/setup-node@v4
+        with: {node-version: '24'}
+      - run: npm ci --no-audit --no-fund && npm run assets && npm run dist:mac
+        env: {CSC_IDENTITY_AUTO_DISCOVERY: 'false'}
+      - uses: actions/upload-artifact@v4
+        with:
+          name: caption-pilot-mac-preview
+          path: apps/control-center/release/*.dmg
+          if-no-files-found: error
+          retention-days: 14
