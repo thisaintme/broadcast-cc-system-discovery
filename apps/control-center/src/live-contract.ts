@@ -1,14 +1,14 @@
 import type {ReadRequest,Workspace} from './model.ts';
-export type LiveRead = ReadRequest | 'GetProfileList' | 'GetCurrentPreviewScene' | 'GetCurrentSceneTransition' | 'GetMediaInputStatus' | 'GetLastReplayBufferReplay' | 'GetSourceScreenshot';
-export type LiveWrite = 'SetCurrentProgramScene'|'SetInputSettings'|'SetSceneItemEnabled'|'SetInputMute'|'StartStream'|'StopStream'|'SetCurrentPreviewScene'|'TriggerStudioModeTransition'|'SetStudioModeEnabled'|'SetInputVolume'|'StartRecord'|'StopRecord'|'PauseRecord'|'ResumeRecord'|'StartReplayBuffer'|'StopReplayBuffer'|'SaveReplayBuffer'|'StartVirtualCam'|'StopVirtualCam'|'TriggerMediaInputAction';
-export const LIVE_COMMANDS=['prepare','intro','start','on-air','main','speaker','bible','prayer','outro','mute','unmute','stop','operator'] as const;
+export type LiveRead = ReadRequest | 'GetProfileList' | 'GetCurrentPreviewScene' | 'GetCurrentSceneTransition' | 'GetMediaInputStatus' | 'GetLastReplayBufferReplay' | 'GetSourceScreenshot' | 'GetSceneTransitionList' | 'GetSceneSceneTransitionOverride';
+export type LiveWrite = 'SetSceneSceneTransitionOverride'|'SetCurrentProgramScene'|'SetInputSettings'|'SetSceneItemEnabled'|'SetInputMute'|'StartStream'|'StopStream'|'SetCurrentPreviewScene'|'TriggerStudioModeTransition'|'SetStudioModeEnabled'|'SetInputVolume'|'StartRecord'|'StopRecord'|'PauseRecord'|'ResumeRecord'|'StartReplayBuffer'|'StopReplayBuffer'|'SaveReplayBuffer'|'StartVirtualCam'|'StopVirtualCam'|'TriggerMediaInputAction';
+export const LIVE_COMMANDS=['prepare','intro','start','on-air','main','speaker','bible','prayer','outro','mute','unmute','stop','operator','intro-scene','prayer-scene','chapter','interlude','singing','remote','presentation','studio-preview','studio-take','studio-mode'] as const;
 export type LiveCommand=typeof LIVE_COMMANDS[number];
-export type LivePhase='unknown'|'prepared'|'intro'|'main'|'speaker'|'bible'|'prayer'|'outro';
+export type LivePhase='unknown'|'prepared'|'intro'|'main'|'speaker'|'bible'|'prayer'|'outro'|'chapter'|'interlude'|'singing'|'remote';
 // Optional for compatibility with older clients. It is never loaded from disk.
 export interface LivePermissions{scenes:boolean;audio:boolean;stream:boolean;operator?:boolean}
 export const noPermissions=():LivePermissions=>({scenes:false,audio:false,stream:false});
 export interface LiveObservation{
-  checkedAt:number|null;collection:string;profile:string;program:string;scenes:string[];
+  checkedAt:number|null;collection:string;profile:string;program:string;scenes:string[];preview?:string;studio?:boolean|null;
   streaming:boolean|null;reconnecting:boolean|null;durationMs:number|null;bytes:number|null;skippedFrames:number|null;totalFrames:number|null;
   inputName:string;muted:boolean|null;warnings:string[];
 }
@@ -52,5 +52,5 @@ export function serviceTitle(title:string,startsAt:string):string{
   return `${part('year')}${part('month')}${part('day')} - ${value}`;
 }
 export function liveMappingKey(w:Workspace):string{
-  return JSON.stringify({url:w.obsUrl,collection:w.inventory?.collection,scenes:w.bindings.scenes,bible:w.bindings.bibleText,next:w.bindings.nextServiceText,audio:w.bindings.audioInput,group:w.captions.speakerGroup,pool:w.captions.speakerPool,sources:w.captions.speakerSources,speakers:w.speakers});
+  return JSON.stringify({presentation:w.presentation,transitionMs:w.transitionMs??900,url:w.obsUrl,collection:w.inventory?.collection,scenes:w.bindings.scenes,bible:w.bindings.bibleText,next:w.bindings.nextServiceText,audio:w.bindings.audioInput,group:w.captions.speakerGroup,pool:w.captions.speakerPool,sources:w.captions.speakerSources,speakers:w.speakers});
 }

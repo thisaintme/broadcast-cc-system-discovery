@@ -2,35 +2,73 @@
 // CI only: drive the executable inside the verified DMG, not the checkout.
 // Use a disposable Chromium profile and never press Review and create on YouTube.
 const assert=require('node:assert/strict');
-const {spawn}=require('node:child_process');
+const {spawn,execFileSync}=require('node:child_process');
 const {mkdtemp,rm}=require('node:fs/promises');
 const {tmpdir}=require('node:os');
-const {join}=require('node:path');
+const {join,dirname}=require('node:path');
 const {createServer}=require('node:net');
 const {setTimeout:delay}=require('node:timers/promises');
 const WS=require('ws');
 async function freePort(){const s=createServer();await new Promise((ok,no)=>{s.once('error',no);s.listen(0,'127.0.0.1',ok);});const port=s.address().port;await new Promise(ok=>s.close(ok));return port;}
-async function until(fn,label){const end=Date.now()+25000;while(Date.now()<end){const result=await fn();if(result)return result;await delay(150);}throw Error('Timed out: '+label);}
+async function until(fn,label,timeout=25000){const end=Date.now()+timeout;while(Date.now()<end){const result=await fn();if(result)return result;await delay(150);}throw Error('Timed out: '+label);}
 function evaluate(target,expression){return new Promise((ok,no)=>{const ws=new WS(target.webSocketDebuggerUrl,{handshakeTimeout:4000});const timer=setTimeout(()=>{ws.terminate();no(Error('Renderer timed out'));},5000);const done=(fn,value)=>{clearTimeout(timer);ws.terminate();fn(value);};ws.once('error',e=>done(no,e));ws.once('open',()=>ws.send(JSON.stringify({id:1,method:'Runtime.evaluate',params:{expression,awaitPromise:true,returnByValue:true}})));ws.on('message',data=>{const r=JSON.parse(data);if(r.id!==1)return;if(r.error||r.result.exceptionDetails)return done(no,Error(r.error?.message||r.result.exceptionDetails?.exception?.description||'Renderer exception'));done(ok,r.result.result.value);});});}
+function verifyNativePrebuilds(binary){
+  // FreeType distributes both CPU variants in every package. They must remain
+  // in separate arch-labelled directories, not be merged or dropped as duplicates.
+  const root=join(dirname(binary),'..','Resources','app.asar.unpacked','node_modules','@julusian','freetype2','prebuilds');
+  for(const [directory,architecture] of [['arm64','arm64'],['x64','x86_64']]){
+    const file=join(root,'freetype2-darwin-'+directory,'node-napi-v7.node');
+    const actual=execFileSync('/usr/bin/lipo',['-archs',file],{encoding:'utf8'}).trim().split(/\s+/);
+    assert.ok(actual.includes(architecture),`Packaged ${directory} FreeType prebuild lacks ${architecture}: ${actual.join(' ')}`);
+  }
+  console.log('PASS mounted DMG native dependencies: FreeType arm64 and x86_64 prebuilds both present with the correct architecture.');
+}
 async function main(){
-  const binary=process.argv[2];assert.ok(binary?.startsWith('/'));const port=await freePort();const profile=await mkdtemp(join(tmpdir(),'bcc-mounted-'));
+  const binary=process.argv[2];assert.ok(binary?.startsWith('/'));verifyNativePrebuilds(binary);const port=await freePort();const profile=await mkdtemp(join(tmpdir(),'bcc-mounted-'));
   const child=spawn(binary,[`--user-data-dir=${profile}`,'--remote-debugging-address=127.0.0.1',`--remote-debugging-port=${port}`],{stdio:'ignore'});
   let exited=false;const exit=new Promise(ok=>{child.once('error',()=>{exited=true;ok();});child.once('exit',()=>{exited=true;ok();});});
   async function page(file){return until(async()=>{if(exited)throw Error('Packaged app exited');let pages=[];try{pages=await(await fetch(`http://127.0.0.1:${port}/json/list`,{signal:AbortSignal.timeout(1000)})).json();}catch{}return pages.find(t=>t.type==='page'&&t.url===`bcc://app/${file}.html`);},file);}
   try{
     const desk=await page('live');const d=expr=>evaluate(desk,expr);
-    await until(()=>d(`document.querySelector('.bcc-shell #nav-youtube') && document.getElementById('live-mode')?.textContent==='Nur beobachten'`),'redesigned desk and YouTube navigation');
+    await until(()=>d(`!!document.getElementById('v107-scene-main')`),'packaged V107 Regie');
     assert.equal(await d(`window.liveService.site().then(s=>s.version)`),require('../package.json').version);
     assert.equal(await d(`document.documentElement.dataset.theme`),'dark');
-    assert.equal(await d(`document.querySelector('#nav-live').getAttribute('aria-current')`),'page');
-    assert.equal(await d(`document.querySelectorAll('.bcc-rail .desk-sidebar-content').length`),1);
-    assert.equal(await d(`!!document.querySelector('#live-prayer')`),true);
+    assert.equal(await d(`document.querySelectorAll('.v107-scenes button').length`),8);
+    assert.equal(await d(`document.querySelectorAll('#v107-audio').length`),1);
+    assert.equal(await d(`window.liveService.site().then(s=>s.live.permissions.scenes)`),false);
+    assert.equal(await d(`window.liveService.chapter('schlachter',42,3).then(c=>c.verses.find(v=>v.n===16).text.includes('Gott'))`),true);
+    await d(`document.fonts.ready`);
+    assert.equal(await d(`document.fonts.check('14px Inter')`),true);
     await d(`document.querySelector('#nav-setup').click()`);
     await until(()=>d(`!!document.querySelector('#save-obs-credential') && !!document.querySelector('#connect-saved-obs')`),'packaged credential settings');
     assert.equal(await d(`document.querySelector('#live-obs-password').type`),'password');
     await d(`document.querySelector('#nav-schedule').click()`);
     await until(()=>d(`document.body.innerText.includes('Sendereihe')`),'packaged reusable series screen');
-    await d(`document.querySelector('#nav-youtube').click()`);
+    await until(()=>d(`!!document.querySelector('#local-service-form')`),'packaged local calendar');
+    const localField=async(id,value)=>d(`(()=>{const e=document.getElementById(${JSON.stringify(id)});Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set.call(e,${JSON.stringify(value)});e.dispatchEvent(new Event('input',{bubbles:true}));})()`);
+    const saveLocal=async()=>{await until(()=>d(`!document.querySelector('#add-live-service').disabled`),'local calendar ready');await d(`document.querySelector('#add-live-service').click()`);};
+    await localField('new-service-date','2020-01-05');await localField('new-service-time','11:00');await saveLocal();
+    await until(()=>d(`window.liveService.site().then(s=>!s.live.busy&&s.workspace.services.length===1)`),'packaged local single save');
+    assert.equal(await d(`window.liveService.site().then(s=>s.live.busy)`),false);
+    await until(()=>d(`!document.querySelector('#add-live-service').disabled`),'local form unlocked after single save',1200);
+    await localField('new-service-date','2027-03-14');await d(`document.querySelector('#local-service-repeat').click()`);await localField('local-service-count','4');await saveLocal();
+    await until(()=>d(`window.liveService.site().then(s=>!s.live.busy&&s.workspace.services.length===5)`),'packaged local series save');
+    await until(()=>d(`!document.querySelector('#add-live-service').disabled`),'local form unlocked after series save',1200);
+    const local=await d(`window.liveService.site().then(s=>s.workspace.services)`);
+    assert.deepEqual(local.slice(1).map(x=>x.startsAt),['2027-03-14T10:00:00.000Z','2027-03-21T10:00:00.000Z','2027-03-28T09:00:00.000Z','2027-04-04T09:00:00.000Z']);
+    await saveLocal();await until(()=>d(`document.querySelector('#local-service-notice')?.textContent.includes('bereits')`),'idempotent packaged local save');
+    await until(()=>d(`!document.querySelector('#add-live-service').disabled`),'local form unlocked after repeated save',1200);
+    await until(()=>d(`!document.querySelector('[data-select-service]').disabled`),'local selection enabled');
+    await d(`document.querySelector('[data-select-service="'+${JSON.stringify(local[3].id)}+'"]').click()`);
+    await until(()=>d(`document.querySelector('#bcc-content').dataset.tab==='live'`),'packaged return to desk');
+    assert.equal(await d(`window.liveService.site().then(s=>s.live.selectedService)`),local[3].id);
+    assert.equal(await d(`document.querySelector('#live-service').value`),local[3].id);
+    assert.equal(await d(`document.querySelector('#v107-studio-mode').checked`),false);
+    console.log('PASS mounted DMG local planning: single + four-date series, Berlin DST, idempotent save, direct broadcast selection; zero account setup.');
+    // V107 exposes YouTube management through the single visible tools-menu path.
+    await d(`document.querySelector('button[aria-controls="v107-tools"]').click()`);
+    await until(()=>d(`!![...document.querySelectorAll('#v107-tools button')].find(b=>b.textContent==='YouTube-Verwaltung öffnen'&&b.getClientRects().length>0)`),'visible YouTube tools-menu action');
+    await d(`[...document.querySelectorAll('#v107-tools button')].find(b=>b.textContent==='YouTube-Verwaltung öffnen').click()`);
     const manage=await page('stream-management');const m=expr=>evaluate(manage,expr);
     const tab=async label=>{await until(()=>m(`!![...document.querySelectorAll('nav button')].find(b=>b.textContent===${JSON.stringify(label)})`),'tab '+label);await m(`[...document.querySelectorAll('nav button')].find(b=>b.textContent===${JSON.stringify(label)}).click()`);await until(()=>m(`document.querySelector('nav button[aria-current=page]')?.textContent===${JSON.stringify(label)}`),label);};
     await tab('Accounts');assert.match(await m('document.body.innerText'),/German · OBS/);assert.match(await m('document.body.innerText'),/Russian · Web Presenter/);
@@ -48,7 +86,7 @@ async function main(){
     assert.match(await m(`document.querySelector('.preview').textContent`),/DE: unlisted · RU: unlisted/);
     const rows=await m(`[...document.querySelectorAll('.preview .dates > div')].map(e=>e.textContent)`);assert.equal(new Set(rows).size,8);for(const row of rows){const [date,time]=row.split(' · ');assert.equal(time,'11:00');assert.equal(new Date(date+'T12:00:00Z').getUTCDay(),0);}
     assert.equal(await m(`window.streamManagement.panel().then(p=>p.state.occurrences.length)`),0);
-    console.log('PASS mounted DMG: redesigned German desk → visible YouTube button → both accounts → eight Sundays at 11:00 / sixteen unlisted event previews. Nothing scheduled or transmitted.');
+    console.log('PASS mounted DMG: V107 desk, offline Bible, local fonts → visible YouTube tools menu → both accounts → eight Sundays at 11:00 / sixteen unlisted event previews. No YouTube events created and nothing transmitted. Local calendar data stays in the disposable test profile.');
   }finally{if(!exited)child.kill('SIGTERM');await Promise.race([exit,delay(2000)]);if(!exited){child.kill('SIGKILL');await exit;}await rm(profile,{recursive:true,force:true,maxRetries:4});}
 }
 main().catch(e=>{console.error(e);process.exitCode=1;});

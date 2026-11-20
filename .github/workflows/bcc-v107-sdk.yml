@@ -1,0 +1,32 @@
+name: V107 pinned device SDK
+on:
+  push:
+    branches: ['feat/bcc-design-v107']
+    paths: ['.github/workflows/bcc-v107-sdk.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  sdk:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - name: Lock explicit ATEM SDK version
+        working-directory: apps/control-center
+        run: |
+          npm install --save-exact atem-connection@3.10.3 --ignore-scripts --no-audit --no-fund
+          mkdir -p release/sdk
+          cp package.json package-lock.json release/sdk/
+          tar --exclude='node_modules/electron/dist' -czf release/sdk/node_modules.tar.gz node_modules
+      - uses: actions/upload-artifact@v4
+        with:
+          name: bcc-v107-device-sdk
+          path: apps/control-center/release/sdk/
+          if-no-files-found: error
+          retention-days: 7

@@ -1,3 +1,5 @@
+import type {DeviceService} from './device-service.ts';
+import type {PresenterTarget} from './device-transport.ts';
 import {EndCountdown} from './end-countdown.ts';
 import type {EndScope} from './end-countdown.ts';
 import {assertReviewedMetadata} from './youtube-controller.ts';
@@ -20,7 +22,7 @@ import {YouTubeFileState,YouTubeSecretFile} from './youtube-storage.ts';
 import {YouTubeFailure,youtubeError,identifier,parseCommand,watchUrl} from './youtube-model.ts';
 import type {Broadcast,Destination,YouTubePanel} from './youtube-model.ts';
 interface Dependencies {
-  workspace():Workspace;parent():BrowserWindow|null;live:LiveController;peer:LiveObs;journal:JournalPort;
+  workspace():Workspace;parent():BrowserWindow|null;devices:DeviceService;live:LiveController;peer:LiveObs;journal:JournalPort;
   exclusive<T>(fn:()=>Promise<T>):Promise<T>;notify():void;
   saveService(service:{id:string;title:string;startsAt:string}):Promise<void>;
 }
@@ -28,7 +30,7 @@ interface Dependencies {
 export class YouTubeManager {
   private deskEpoch=0;private ending:EndCountdown;private initialization:Promise<void>|null=null;
   private window:BrowserWindow|null=null;private loaded=false;private working=false;private outputOperation=false;private opening:Promise<void>|null=null;
-  private error='';private notice='Staged YouTube integration. No event is created or started by opening this screen.';
+  private error='';private notice='Bereit. Das Öffnen der Regie startet keine Übertragung.';
   private broadcasts:Broadcast[]=[];private checkedAt:number|null=null;
   private management:StreamManagementWindow;
   private oauth:YouTubeOAuth;private api:YouTubeClient;private controller:YouTubeController;private host:BroadcastHost;
@@ -48,7 +50,7 @@ export class YouTubeManager {
       log:(action,stage,detail)=>d.journal.append(action,stage,detail),
     };
     this.controller=new YouTubeController(this.api,new YouTubeFileState(path.join(directory,'broadcasts.json')),this.host,()=>this.oauth.channel);
-    this.management=new StreamManagementWindow({directory,parent:d.parent,germanOAuth:this.oauth,externalBusy:()=>this.working||d.live.busy||this.ending.active,encoderBusy:lang=>{const s=d.live.snapshot();return lang==='de'&&s.connected&&(s.observation.streaming!==false||s.observation.reconnecting!==false);},openControls:()=>this.openLegacy(),useOnDesk:occurrence=>this.useManagedService(occurrence)});
+    this.management=new StreamManagementWindow({directory,parent:d.parent,germanOAuth:this.oauth,externalBusy:()=>this.working||d.live.busy||this.ending.active,encoderBusy:lang=>{const s=d.live.snapshot();if(lang==='de')return s.connected&&(s.observation.streaming!==false||s.observation.reconnecting!==false);const ru=d.devices.snapshot().readings.webPresenter;return ru.enabled&&(ru.status!=='ready'||ru.stream?.state!=='Idle');},openControls:()=>this.openLegacy(),useOnDesk:occurrence=>this.useManagedService(occurrence)});
     const sender=(event:IpcMainInvokeEvent)=>{
       if(!this.window||event.sender!==this.window.webContents||event.senderFrame!==this.window.webContents.mainFrame||event.senderFrame?.url!=='bcc://app/youtube.html')throw new Error('Untrusted YouTube request.');
     };
@@ -112,6 +114,7 @@ export class YouTubeManager {
     try{await this.initialization;}finally{this.initialization=null;}
   }
   async runDesk(kind:unknown):Promise<void>{
+    if(kind==='start-ru'||kind==='publish-ru'){await this.runRussian(kind);return;}
     if(kind!=='start'&&kind!=='publish-intro')throw new YouTubeFailure('Ungültige YouTube-Aktion.');
     await this.initialize();if(this.busy)throw new YouTubeFailure('Eine Aktion läuft bereits.');
     this.working=true;this.outputOperation=true;this.error='';this.emit();
@@ -119,8 +122,24 @@ export class YouTubeManager {
       const review=await this.controller.review({kind,serviceId:this.host.selected()}),parent=this.d.parent();
       if(!parent)throw new YouTubeFailure('Sendepult geschlossen.');
       const pick=await dialog.showMessageBox(parent,{type:'warning',message:kind==='start'?'Deutsch mit Intro starten?':'Aktuelles Intro auf YouTube veröffentlichen?',detail:review.detail+'\n\nРусский / Web Presenter werden dadurch nicht gestartet.',buttons:['Abbrechen','Bestätigen'],defaultId:0,cancelId:0});
-      if(pick.response!==1)return;await this.controller.execute(review);this.notice='Deutsch auf YouTube bestätigt. Hauptbild mit Ton ist eine separate Aktion; Русский / Web Presenter bleiben manuell.';await this.refresh();
+      if(pick.response!==1)return;await this.controller.execute(review);this.notice='Deutsch auf YouTube bestätigt. Hauptbild mit Ton ist eine separate Aktion; Русский wird separat gestartet.';await this.refresh();
     });}catch(e){this.error=youtubeError(e);throw new YouTubeFailure(this.error);}finally{this.working=false;this.outputOperation=false;this.emit();this.d.notify();void this.management.observe();}
+  }
+  private async runRussian(kind:'start-ru'|'publish-ru'):Promise<void>{
+    await this.initialize();if(this.busy)throw new YouTubeFailure('Eine Aktion läuft bereits.');
+    const epoch=this.deskEpoch,ticket=this.host.ticket(),serviceId=this.host.selected(),key=this.d.devices.key();
+    const guard=()=>{if(epoch!==this.deskEpoch||ticket!==this.host.ticket()||serviceId!==this.host.selected()||key!==this.d.devices.key())throw new YouTubeFailure('Steuerung, Sendung oder Geräteeinrichtung geändert.');};
+    this.working=true;this.outputOperation=true;this.error='';this.emit();
+    try{await this.d.exclusive(async()=>{
+      guard();const review=await this.management.russianTarget(serviceId),encoder=await this.d.devices.reviewRussian(review.profile.key);guard();
+      if(kind==='start-ru'&&(review.broadcast.lifecycle==='live'||encoder.status.state!=='Idle'||review.profile.status==='active'))throw new YouTubeFailure('Russisch sendet bereits oder empfängt bereits ein Signal. Nutzen Sie nach Prüfung „Signal veröffentlichen“.');
+      if(kind==='publish-ru'&&encoder.status.state!=='Streaming')throw new YouTubeFailure('Web Presenter sendet noch nicht bestätigt.');
+      const parent=this.d.parent();if(!parent)throw new YouTubeFailure('Sendepult geschlossen.');
+      const pick=await dialog.showMessageBox(parent,{type:'warning',message:kind==='start-ru'?'Russische Übertragung starten?':'Russisches Signal auf YouTube veröffentlichen?',detail:`${review.broadcast.title}\nKanal: ${review.broadcast.channelId}\nEvent: ${review.broadcast.id}\nSichtbarkeit: ${review.broadcast.privacy}\n\n${kind==='start-ru'?'Startet den überprüften Web Presenter und veröffentlicht erst nach bestätigtem Eingangssignal auf YouTube.':'Veröffentlicht das bereits laufende, überprüfte Eingangssignal.'} Deutsch, OBS-Bild und OBS-Ton bleiben unverändert. Prüfen Sie das russische Eingangssignal am Gerät.`,buttons:['Abbrechen','Russisch bestätigen'],defaultId:0,cancelId:0});
+      if(pick.response!==1)return;guard();await this.management.verifyRussian(serviceId,review);guard();
+      if(kind==='start-ru')await this.d.devices.russian('Start',encoder.target,async()=>{guard();});
+      guard();await this.management.publishRussian(serviceId,review,guard);guard();this.notice='Russisch ist auf YouTube bestätigt. Web Presenter sendet; Deutsch wurde nicht verändert.';
+    });}catch(e){this.error=e instanceof ManagementError?e.message:youtubeError(e);throw new YouTubeFailure(this.error);}finally{this.working=false;this.outputOperation=false;this.emit();this.d.notify();void this.management.observe();}
   }
   async scheduleEnd(raw:unknown):Promise<void>{
     if(!['de','ru','both'].includes(String(raw)))throw new YouTubeFailure('Wählen Sie Deutsch, Русский oder beide Ziele.');
@@ -130,25 +149,37 @@ export class YouTubeManager {
     const unchanged=()=>{if(epoch!==this.deskEpoch||this.host.ticket()!==ticket||this.host.selected()!==serviceId)throw new YouTubeFailure('Steuerung oder ausgewählte Sendung geändert.');};
     try{await this.d.exclusive(async()=>{
       const before=withDE?await this.controller.review({kind:'end',serviceId},true):null;
-      const russian=withRU?await this.management.reviewRussianEnd(serviceId):null;unchanged();
+      const ruTarget=withRU?await this.management.russianTarget(serviceId,true):null;
+      const russian=ruTarget?.broadcast||null;const ruEncoder=ruTarget?await this.d.devices.reviewRussian(ruTarget.profile.key):null;unchanged();
+      const deviceKey=this.d.devices.key(),endSteps=this.d.devices.plannedEnd();
+      if(this.d.workspace().presentation?.devices.end.recording&&!this.d.live.snapshot().permissions.operator)throw new YouTubeFailure('Für den eingerichteten Aufnahme-Abschluss bitte zuerst die OBS-Pult-Steuerung freigeben.');
       const parent=this.d.parent();if(!parent)throw new YouTubeFailure('Sendepult geschlossen.');
       const detail=(before?before.detail+'\n\n':'')+(russian?`Русский: ${russian.title}\nKanal: ${russian.channelId}\nEvent: ${russian.id}\nSichtbarkeit: ${russian.privacy}\n\n`:'')+
-        (withDE?'Jetzt: Outro in OBS zeigen und Sendeton ausschalten. Nach 15 Sekunden: die ausgewählten YouTube-Events beenden, danach den verifizierten deutschen OBS-Stream stoppen.':'Nach 15 Sekunden nur das russische YouTube-Event beenden. Deutsches Bild, Ton und OBS bleiben unverändert. Das russische Outro muss am Web Presenter manuell vorbereitet sein.')+
-        (withRU?'\n\nWeb Presenter sendet weiter, bis Sie ihn MANUELL stoppen. Ein OBS-Outro bestätigt kein russisches Outro.':'')+'\n\nAbbrechen, Steuerung abgeben oder ein externer OBS-Wechsel verhindert noch nicht ausgeführte Folgeaktionen.';
+        (withDE?'Jetzt: Outro in OBS zeigen und Sendeton ausschalten. Nach 15 Sekunden: die ausgewählten YouTube-Events beenden, danach den verifizierten deutschen OBS-Stream stoppen.':'Nach 15 Sekunden nur das russische YouTube-Event beenden. Deutsches Bild, Ton und OBS bleiben unverändert. Das russische Eingangssignal wird nicht umgeschaltet.')+
+        (withRU?'\n\nNach dem bestätigten YouTube-Ende wird der überprüfte Web Presenter gestoppt. Ein OBS-Outro bestätigt kein russisches Outro.':'')+(endSteps.length?'\n\nNur wenn DE und RU beide nachweislich nicht mehr senden: '+endSteps.join('; ')+'.':'')+'\n\nAbbrechen, Steuerung abgeben oder ein externer OBS-Wechsel verhindert noch nicht ausgeführte Folgeaktionen.';
       const pick=await dialog.showMessageBox(parent,{type:'warning',message:`${scope==='both'?'Beide YouTube-Übertragungen':scope==='de'?'Deutsch':'Русский'} nach 15 Sekunden beenden?`,detail,buttons:['Abbrechen','Outro / Abschluss freigeben'],defaultId:0,cancelId:0});
       if(pick.response!==1)return;unchanged();
       if(withDE)await this.d.live.command('outro');
       const after=before?await this.controller.review({kind:'end',serviceId}):null;
       if(before&&after){assertReviewedMetadata(before.broadcast!,after.broadcast!);if(before.ingest.id!==after.ingest.id||before.destination.key!==after.destination.key||before.channel.id!==after.channel.id)throw new YouTubeFailure('YouTube-Ziel hat sich während des Outros geändert. Kein automatisches Ende.');}
-      const endTicket=this.host.ticket(),guard=()=>{if(epoch!==this.deskEpoch||endTicket!==this.host.ticket()||serviceId!==this.host.selected())throw new YouTubeFailure('Steuerung geändert.');if(withDE){const o=this.host.state();if(!o.connected||!o.permissionsReady||o.streaming!==true||o.program!==o.outro||o.muted!==true)throw new YouTubeFailure('Outro oder OBS-Zustand nicht bestätigt.');}};
+      const endTicket=this.host.ticket(),guard=()=>{if(epoch!==this.deskEpoch||endTicket!==this.host.ticket()||serviceId!==this.host.selected()||deviceKey!==this.d.devices.key())throw new YouTubeFailure('Steuerung geändert.');if(withDE){const o=this.host.state();if(!o.connected||!o.permissionsReady||o.streaming!==true||o.program!==o.outro||o.muted!==true)throw new YouTubeFailure('Outro oder OBS-Zustand nicht bestätigt.');}};
       this.ending.arm(scope,guard,async valid=>{
         this.working=true;this.outputOperation=true;this.emit();
         try{await this.d.exclusive(async()=>{valid();guard();
           // Preflight DE before a possible RU mutation; all writes recheck their own pinned target.
           if(after){const current=await this.controller.review(after.command);valid();guard();if(current.stamp!==after.stamp)throw new YouTubeFailure('Deutsches Ziel geändert.');}
-          if(russian)await this.management.completeRussian(serviceId,russian,()=>{valid();guard();});valid();guard();
+          if(russian&&ruTarget&&ruEncoder){await this.management.verifyRussian(serviceId,ruTarget,true);valid();guard();await this.d.devices.reviewRussian(ruTarget.profile.key);valid();guard();await this.management.completeRussian(serviceId,russian,()=>{valid();guard();});valid();guard();await this.d.devices.russian('Stop',ruEncoder.target,async()=>{valid();guard();});}valid();guard();
           if(after)await this.controller.execute(after);valid();
-          this.notice='Ausgewählte YouTube-Events beendet. Web Presenter und Kameras manuell prüfen.';
+          let completedTicket=this.host.ticket();
+          const stable=async()=>{valid();if(epoch!==this.deskEpoch||deviceKey!==this.d.devices.key()||serviceId!==this.host.selected()||completedTicket!==this.host.ticket())throw new YouTubeFailure('Geräteabschluss abgebrochen.');};
+          const obsOff=async()=>{await stable();const o=await this.d.peer.read('GetStreamStatus');await stable();if(o.outputActive!==false||o.outputReconnecting!==false)throw new YouTubeFailure('OBS sendet noch oder ist nicht bestätigt. Gemeinsame Geräte bleiben unverändert.');};
+          if(endSteps.length){
+            const stillOther=await this.d.peer.read('GetStreamStatus');valid();
+            const wp=this.d.devices.snapshot().readings.webPresenter;
+            if(stillOther.outputActive===true||(wp.enabled&&wp.stream?.state==='Streaming')){this.d.devices.skipEnd('Eine andere Übertragung läuft weiter. Gemeinsame Geräte bleiben unverändert.');}
+            else await this.d.devices.finish(obsOff,async()=>{await stable();const record=await this.d.peer.read('GetRecordStatus');await stable();if(record.outputActive===false)return;if(record.outputActive!==true)throw new YouTubeFailure('Aufnahmestatus nicht bestätigt.');const w=this.d.live.snapshot().observation;await this.d.live.command('operator',JSON.stringify({kind:'record',collection:w.collection,profile:w.profile,state:'stop'}));completedTicket=this.host.ticket();},stable);
+          }
+          this.notice='Ausgewählte Übertragungen beendet. Ergebnisse der eingerichteten Abschluss-Schritte stehen in der Geräteübersicht.';
         });}finally{this.working=false;this.outputOperation=false;this.emit();void this.management.observe();}
       });
     });}catch(e){this.error=e instanceof ManagementError?e.message:youtubeError(e);throw new YouTubeFailure(this.error);}finally{this.working=false;this.emit();this.d.notify();}
@@ -185,7 +216,7 @@ export class YouTubeManager {
   cancel():void{
     this.deskEpoch++;
     this.ending.cancel();this.management?.cancel();this.controller.cancel();this.oauth.cancel();if(this.outputOperation)this.d.live.cancelReturn();
-    this.notice='Pending YouTube follow-up cancelled. Already completed changes remain; OBS and YouTube were not automatically stopped.';this.checkedAt=null;this.emit();
+    this.notice='Ausstehende Folgeaktionen abgebrochen. Bereits bestätigte Änderungen bleiben bestehen; laufende Übertragungen werden nicht automatisch gestoppt.';this.checkedAt=null;this.emit();
   }
   close():void{this.management.close();this.cancel();this.window?.close();}
   private async refresh():Promise<void>{

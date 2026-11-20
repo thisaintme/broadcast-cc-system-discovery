@@ -6,7 +6,7 @@ let peer,finished=false,allowOperator=false,operatorDialogs=0,holdDialog=false,r
 const timer=setTimeout(()=>finish(1,new Error('Operator UI test timed out')),120000);
 dialog.showMessageBox=async(_window,options)=>{
   assert.equal(options.defaultId,0);assert.equal(options.cancelId,0);
-  if(options.message==='Enable live control of this OBS session?'){assert.match(options.detail,/operator desk: ENABLED/);return {response:1};}
+  if(options.message==='Steuerung für diese OBS-Sitzung freigeben?'){assert.match(options.detail,/Erweitertes OBS-Pult: freigegeben/);return {response:1};}
   if(options.message==='Apply this OBS operator action?'){operatorDialogs++;assert.match(options.detail,/Synthetic production collection/);assert.match(options.detail,/Synthetic profile/);if(holdDialog)return new Promise(resolve=>resolveDialog=resolve);return {response:allowOperator?1:0};}
   return {response:0};
 };

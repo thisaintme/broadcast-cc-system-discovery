@@ -7,7 +7,7 @@ app.disableHardwareAcceleration();
 const dir=fs.mkdtempSync(path.join(os.tmpdir(),'bcc-redesign-'));app.setPath('userData',dir);
 let peer,finished=false;
 const timer=setTimeout(()=>finish(1,new Error('Redesign acceptance timed out')),60000);
-dialog.showMessageBox=async(_win,o)=>{assert.equal(o.defaultId,0);return {response:o.message==='Enable live control of this OBS session?'?1:0};};
+dialog.showMessageBox=async(_win,o)=>{assert.equal(o.defaultId,0);return {response:o.message==='Steuerung für diese OBS-Sitzung freigeben?'?1:0};};
 async function finish(code,e){if(finished)return;finished=true;clearTimeout(timer);if(e)console.error(e);if(peer)await peer.close();fs.rmSync(dir,{recursive:true,force:true});app.exit(code);}
 (async()=>{
  peer=await start();peer.state.scenes.push('Prayer');peer.state.nodes.Prayer=[];
@@ -41,10 +41,10 @@ async function finish(code,e){if(finished)return;finished=true;clearTimeout(time
    const preview=await ev(`window.streamManagement.seriesPreview(${JSON.stringify(range)})`);assert.ok(preview.newCount>=4&&preview.newCount<=5);assert.equal(await ev(`window.streamManagement.panel().then(p=>p.state.occurrences.length)`),0);
    await ev(`document.getElementById('nav-setup').click()`);await wait(`!!document.getElementById('connect-saved-obs')`);
    assert.equal(await ev(`document.getElementById('live-obs-password').value`),'');
-   assert.equal(await ev(`document.querySelectorAll('.bcc-rail .desk-sidebar-content').length`),1);
+   assert.equal(await ev(`document.querySelectorAll('.v107-shell .v107-navbar').length`),1);
    assert.equal(await ev(`document.documentElement.scrollWidth>innerWidth+2`),false);
    fs.mkdirSync('release',{recursive:true});fs.writeFileSync('release/native-redesign.png',(await win.webContents.capturePage()).toPNG());
-   console.log('PASS native redesign: real Keychain ciphertext reused at startup; zero startup output writes; speaker/queue state; confirmed Bible advancement; Prayer return; local series preview; persistent sidebar. No real accounts or equipment used.');await finish(0);
+   console.log('PASS native redesign: real Keychain ciphertext reused at startup; zero startup output writes; speaker/queue state; confirmed Bible advancement; Prayer return; local series preview; persistent status header. No real accounts or equipment used.');await finish(0);
   }catch(e){await finish(1,e);}
  }));
  require('../dist/live-main.cjs');

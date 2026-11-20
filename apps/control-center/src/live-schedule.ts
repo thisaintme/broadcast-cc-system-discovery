@@ -1,9 +1,11 @@
+import {planLocalServices} from './local-service-plan.ts';
+import type {LocalServicePlan} from './local-service-plan.ts';
 import type {Workspace} from './model.ts';
 import {LiveFailure} from './live-contract.ts';
 import {text} from './workspace.ts';
 
 type Service=Workspace['services'][number];
-export type ServiceChange={type:'add';service:Service}|{type:'remove';id:string};
+export type ServiceChange={type:'add';service:Service}|{type:'remove';id:string}|{type:'plan';plan:LocalServicePlan};
 
 function record(raw:unknown,keys:string[]):Record<string,unknown>{
   if(!raw||typeof raw!=='object'||Array.isArray(raw))throw new LiveFailure('Invalid schedule change.');
@@ -31,7 +33,20 @@ function service(raw:unknown):Service{
 export function applyServiceChange(current:Workspace,raw:unknown,selectedService:string):Workspace{
   const change=raw&&typeof raw==='object'&&!Array.isArray(raw)?raw as Record<string,unknown>:{};
   let services:Workspace['services'];
-  if(change.type==='add'){
+  if(change.type==='plan'){
+    record(raw,['type','plan']);
+    const entries=planLocalServices(change.plan);
+    const additions:Service[]=[];
+    for(const entry of entries){
+      const existing=current.services.find(s=>s.id===entry.id);
+      if(existing&&(existing.title!==entry.title||existing.startsAt!==entry.startsAt))
+        throw new LiveFailure('Diese Planungskennung gehört bereits zu anderen Terminen. Bitte die Planung neu öffnen.');
+      // Repeated clicks and overlapping series never duplicate the same titled slot.
+      if(!existing&&!current.services.some(s=>s.title===entry.title&&s.startsAt===entry.startsAt))additions.push(entry);
+    }
+    if(current.services.length+additions.length>1000)throw new LiveFailure('Der lokale Kalender ist voll. Bitte zuerst alte Termine entfernen.');
+    services=[...current.services,...additions];
+  }else if(change.type==='add'){
     record(raw,['type','service']);
     const entry=service(change.service);
     if(current.services.some(s=>s.id===entry.id))throw new LiveFailure('That service is already in the schedule.');

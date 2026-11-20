@@ -26,7 +26,7 @@ const paths: Record<IconName, ReactNode> = {
   shield: <><path d="m12 3 8 3v6c0 5-8 9-8 9s-8-4-8-9V6z"/><path d="m8 12 3 3 5-6"/></>,
 };
 export function Icon({name, className = ''}: {name: IconName; className?: string}) {
-  return <svg className={`bcc-icon ${className}`} viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">{paths[name]}</svg>;
+  return <svg className={`bcc-icon ${className}`} viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">{paths[name]}</svg>;
 }
 export function Badge({tone = 'unknown', children}: {tone?: Tone; children: ReactNode}) {
   return <span className="bcc-badge" data-tone={tone}>{tone === 'live' ? <span className="bcc-tally"/> : <Icon name={tone === 'ready' ? 'check' : tone === 'unknown' ? 'help' : tone === 'progress' ? 'history' : tone === 'offline' ? 'stop' : 'help'}/>}<span>{children}</span></span>;

@@ -1,0 +1,62 @@
+[
+  {
+    "name": "schlachter.zip",
+    "source": "https://ebible.org/Scriptures/deu1951_vpl.zip",
+    "sha256": "60e79702d18ede4975f29a44a696cf22fe8809b36cddf8e7a65a83b26a1cffff",
+    "bytes": 4794381
+  },
+  {
+    "name": "luther1912.zip",
+    "source": "https://ebible.org/Scriptures/deu1912_vpl.zip",
+    "sha256": "af668fb39d9c96ceddc3af69cb22db809770d09e7999012aacdaedf85eb5de16",
+    "bytes": 4543255
+  },
+  {
+    "name": "elberfelder1905.zip",
+    "source": "https://ebible.org/Scriptures/deuelo_vpl.zip",
+    "sha256": "71a08dafdd8accb36a09fe757ab111a29b18cd25ade4b89013b542dc01d44b6a",
+    "bytes": 4689332
+  },
+  {
+    "name": "schlachter-copyright.html",
+    "source": "https://ebible.org/deu1951/copyright.htm",
+    "sha256": "9d19a7131d840ba784c362ccd957a86fe739b39b363404578d44754639dbe868",
+    "bytes": 2948
+  },
+  {
+    "name": "luther1912-copyright.html",
+    "source": "https://ebible.org/deu1912/copyright.htm",
+    "sha256": "3cd9e7d6d837fe6dff883973fd018427e39e6af82d71a93bb7254db5f115e5e4",
+    "bytes": 1687
+  },
+  {
+    "name": "elberfelder1905-copyright.html",
+    "source": "https://ebible.org/deuelo/copyright.htm",
+    "sha256": "4b84ec1fe9261391120f1c40fb98470f7c884419860646ef29f9f18e96ac9bef",
+    "bytes": 1985
+  },
+  {
+    "name": "Inter.ttf",
+    "source": "https://raw.githubusercontent.com/google/fonts/main/ofl/inter/Inter%5Bopsz,wght%5D.ttf",
+    "sha256": "29160a80ff49ddcab2c97711247e08b1fab27a484a329ce8b813d820dc559031",
+    "bytes": 876576
+  },
+  {
+    "name": "Inter-OFL.txt",
+    "source": "https://raw.githubusercontent.com/google/fonts/main/ofl/inter/OFL.txt",
+    "sha256": "5b9321a4298cfeb6b34354164a1c3afc3db114569984c502b9b35d988fd58c57",
+    "bytes": 4377
+  },
+  {
+    "name": "Literata.ttf",
+    "source": "https://raw.githubusercontent.com/google/fonts/main/ofl/literata/Literata%5Bopsz,wght%5D.ttf",
+    "sha256": "b41138c9373112f32abb589cc22e8674b06ed4048b0c513be922bdd26f274440",
+    "bytes": 955132
+  },
+  {
+    "name": "Literata-OFL.txt",
+    "source": "https://raw.githubusercontent.com/google/fonts/main/ofl/literata/OFL.txt",
+    "sha256": "8742963604cd89dc81437811a850018fc03b2bfad686d7422c8235967c87614e",
+    "bytes": 4389
+  }
+]

@@ -3,7 +3,7 @@ import {readLocalJson,writeLocalJson} from './local-state.ts';
 import {LiveFailure} from './live-contract.ts';
 export interface BibleCue {id:string;reference:string;shownAt:number|null}
 export interface DeskCues {speaker:string;selected:string;entries:BibleCue[]}
-export type CueChange = {kind:'speaker';name:string}|{kind:'add';reference:string}|{kind:'select'|'remove';id:string};
+export type CueChange = {kind:'speaker';name:string}|{kind:'add';reference:string}|{kind:'edit';id:string;reference:string}|{kind:'select'|'remove';id:string};
 const blank=():DeskCues=>({speaker:'',selected:'',entries:[]});
 const validText=(s:unknown,n:number):s is string=>typeof s==='string'&&s.length<=n&&!/[\u0000-\u001f]/.test(s);
 export class DeskCueStore {
@@ -34,6 +34,9 @@ export class DeskCueStore {
     else if(r.kind==='add'&&Object.keys(r).sort().join(',')==='kind,reference'&&validText(r.reference,500)&&r.reference.trim()){
       if(next.entries.length>=100)throw new LiveFailure('Höchstens 100 Bibelstellen pro Sendung.');
       const id=randomUUID();next.entries.push({id,reference:r.reference.trim(),shownAt:null});if(!next.selected)next.selected=id;
+    }else if(r.kind==='edit'&&Object.keys(r).sort().join(',')==='id,kind,reference'&&typeof r.id==='string'&&validText(r.reference,500)&&r.reference.trim()&&next.entries.some(e=>e.id===r.id)){
+      const entry=next.entries.find(e=>e.id===r.id)!;
+      if(entry.reference!==r.reference.trim()){entry.reference=r.reference.trim();entry.shownAt=null;}
     }else if((r.kind==='select'||r.kind==='remove')&&Object.keys(r).sort().join(',')==='id,kind'&&typeof r.id==='string'&&next.entries.some(e=>e.id===r.id)){
       if(r.kind==='select')next.selected=r.id;
       else {next.entries=next.entries.filter(e=>e.id!==r.id);if(next.selected===r.id)next.selected=next.entries.find(e=>e.shownAt===null)?.id||'';}

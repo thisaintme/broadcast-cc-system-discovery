@@ -1,3 +1,11 @@
+# 0.4.0-alpha.2 — 2026-11-15
+
+- Scene tiles activate Program directly even when OBS Studio Mode is already enabled; Preview/Take requires an explicit desk opt-in.
+- Recognize OBS's own old-Program-to-Preview swap without suppressing unexpected external changes.
+- Add independent local single-service and recurring-service planning, Berlin wall-clock dates, atomic/idempotent saves and direct broadcast selection.
+- Keep YouTube event management separate from the local service calendar; preserve existing services and live permissions.
+- Add native UI and mounted-DMG regressions for these workflows.
+
 # Preview changelog
 
 ## 0.2.0-alpha.3

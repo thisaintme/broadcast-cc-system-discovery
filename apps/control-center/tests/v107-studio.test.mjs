@@ -1,0 +1,28 @@
+import test from 'node:test';import assert from 'node:assert/strict';
+import {LiveController} from '../src/live-controller.ts';import {blankWorkspace} from '../src/model.ts';import {defaultPresentation} from '../src/presentation-model.ts';import mock from './mock-operator.cjs';
+async function rig(t,presentation=false){const f=mock.fixture(),w=blankWorkspace();f.state.streaming=true;f.state.scenes.push('Chapter','Interlude','Singing','Prayer','Remote');for(const n of f.state.scenes)f.state.nodes[n]||=[];w.bindings.scenes={intro:'Intro',main:'Main',speaker:'Speaker',bible:'Bible',outro:'Outro',chapter:'Chapter',interlude:'Interlude',singing:'Singing',prayer:'Prayer',remote:'Remote'};w.bindings.audioInput='Microphone';w.services=[{id:'one',title:'Test',startsAt:'2027-01-01T10:00:00Z'}];w.inventory={origin:'live',collection:f.state.collection,scenes:f.state.scenes,inputs:[],nodes:[],audio:[],warnings:[],capturedAt:''};if(presentation)w.presentation={...defaultPresentation(),enabled:true};const port=mock.fakePort(f),l=new LiveController(()=>w,port,{append:async()=>{},entries:async()=>[]},()=>{});t.after(()=>l.disconnect());await l.connect('test');const p={scenes:true,audio:true,stream:true,operator:true};const g=await l.checkGrant(p);await l.grant(p,g.ticket);return {f,w,l};}
+test('V107 Studio tile sets Preview only, Take uses OBS transition and Main audio policy',async t=>{const {f,l}=await rig(t);await l.command('studio-mode','true');await l.command('studio-preview',JSON.stringify({role:'intro'}));assert.equal(f.state.program,'Main');assert.equal(f.state.preview,'Intro');assert.equal(f.state.writes.some(w=>w.name==='SetInputMute'),false);await l.command('studio-take',JSON.stringify({role:'intro'}));assert.equal(f.state.program,'Intro');assert.equal(f.state.mutes.Microphone,true);assert.equal(f.state.writes.filter(w=>w.name==='TriggerStudioModeTransition').length,1);assert.equal(f.state.writes.some(w=>w.name==='StartStream'||w.name==='StopStream'),false);await l.command('studio-preview',JSON.stringify({role:'main'}));await l.command('studio-take',JSON.stringify({role:'main'}));assert.equal(f.state.program,'Main');assert.equal(f.state.mutes.Microphone,false);});
+test('V107 Studio changed Preview blocks Take before any mutation',async t=>{const {f,l}=await rig(t);await l.command('studio-mode','true');await l.command('studio-preview',JSON.stringify({role:'intro'}));f.state.preview='Main';const n=f.state.writes.length;await assert.rejects(l.command('studio-take',JSON.stringify({role:'intro'})),/Vorschau/);assert.equal(f.state.writes.length,n);});
+test('V107 Main overlay sequence is service-owned, confirms Main and unmute before cue',async t=>{const {f,l}=await rig(t,true);const calls=[];l.attachPresentation({prepare:async(role)=>calls.push('prepare:'+role),cue:async(kind,text)=>{assert.equal(f.state.program,'Main');assert.equal(f.state.mutes.Microphone,false);calls.push(kind+':'+text);}});f.state.program='Intro';f.state.mutes.Microphone=true;await l.refresh();await l.command('bible','Johannes 3,16');assert.deepEqual(calls,['prepare:main','bible:Johannes 3,16']);assert.equal(l.snapshot().returnAt,null);});
+
+for(const echo of ['no-swap','swap-before-program','swap-after-program']){
+ test('V107 direct activation with OBS Studio Mode already enabled and '+echo,async t=>{
+  const {f,l}=await rig(t);await l.release();f.state.studio=true;f.state.program='Intro';f.state.preview='Main';f.state.mutes.Microphone=true;
+  await l.refresh();const p={scenes:true,audio:true,stream:false,operator:false};const g=await l.checkGrant(p);await l.grant(p,g.ticket);
+  const original=f.state.onEvent;f.state.onEvent=(name,data)=>{
+    if(name==='CurrentProgramSceneChanged'&&echo==='swap-before-program'){f.state.preview='Intro';original('CurrentPreviewSceneChanged',{sceneName:'Intro'});}
+    original(name,data);
+    if(name==='CurrentProgramSceneChanged'&&echo==='swap-after-program'){f.state.preview='Intro';original('CurrentPreviewSceneChanged',{sceneName:'Intro'});}
+  };
+  await l.command('on-air');
+  assert.equal(f.state.program,'Main');assert.equal(f.state.mutes.Microphone,false);assert.equal(f.state.studio,true);
+  assert.deepEqual(l.snapshot().permissions,p);
+  assert.deepEqual(f.state.writes.map(x=>x.name),['SetCurrentProgramScene','SetInputMute']);
+ });
+}
+test('V107 unexpected external preview change still blocks direct action before unmute',async t=>{
+ const {f,l}=await rig(t);f.state.studio=true;f.state.program='Intro';f.state.preview='Main';f.state.mutes.Microphone=true;await l.refresh();
+ const original=f.state.onEvent;f.state.onEvent=(n,d)=>{original(n,d);if(n==='CurrentProgramSceneChanged'){f.state.preview='Singing';original('CurrentPreviewSceneChanged',{sceneName:'Singing'});}};
+ await assert.rejects(l.command('on-air'));assert.equal(f.state.mutes.Microphone,true);
+ assert.equal(f.state.writes.some(x=>x.name==='SetInputMute'),false);
+});

@@ -1,3 +1,6 @@
+import {parseStudioIntent} from './studio-intent.ts';
+import type {PresentationRole} from './presentation-model.ts';
+import type {PresentationPort} from './presentation-service.ts';
 import type {Workspace,Role} from './model.ts';
 import {selectService} from './workspace.ts';
 import {executeLiveAction} from './live-actions.ts';
@@ -26,10 +29,14 @@ export class LiveController{
     port.onEvent=(name,data)=>this.event(name,data);
     port.onDisconnect=()=>{this.connection++;this.observed=emptyObservation();this.release('OBS disconnected. Pending actions cancelled; outputs were not stopped.');};
   }
+  private presentation?:PresentationPort;
+  private sceneDevices?:(role:PresentationRole,guard:()=>Promise<void>)=>Promise<void>;
+  attachDevices(action:(role:PresentationRole,guard:()=>Promise<void>)=>Promise<void>):void{this.sceneDevices=action;}
+  attachPresentation(service:PresentationPort):void{this.presentation=service;}
   get authorized():boolean{return this.permissions.scenes||this.permissions.audio||this.permissions.stream||this.permissions.operator===true;}
   get busy():boolean{return this.working;}
   ticket():number{return this.generation;}
-  private serviceId():string{return this.selected||selectService(this.workspace());}
+  private serviceId():string{return this.workspace().services.some(s=>s.id===this.selected)?this.selected:selectService(this.workspace());}
   snapshot():LiveSnapshot{
     const o=this.observed,fresh=this.port.isConnected()&&o.checkedAt!==null&&this.clock.now()-o.checkedAt<6000;
     const observation=fresh?{...o,muted:this.working&&this.audioChanging?null:o.muted,scenes:[...o.scenes],warnings:[...o.warnings]}:{...o,streaming:null,reconnecting:null,muted:null,warnings:[...o.warnings,'Status is disconnected, pending verification or stale; not confirmed off.']};
@@ -59,7 +66,8 @@ export class LiveController{
     try{
       await this.port.connect(this.workspace().obsUrl,password);
       const version=await this.port.read('GetVersion');this.available=new Set(Array.isArray(version.availableRequests)?version.availableRequests.filter((x:unknown)=>typeof x==='string'):[]);
-      this.selected=selectService(this.workspace());await this.refresh();
+      // Keep an explicit valid local selection when connecting/reconnecting OBS.
+      this.selected=this.serviceId();await this.refresh();
       if(this.port.isConnected())this.interval=setInterval(()=>{void this.refresh().catch(()=>{});},2000);
       this.notice='Connected in Observe only mode. Existing stream, scene and mute state were not changed.';
       await this.record('connect','observed',this.notice);this.emit();
@@ -69,11 +77,12 @@ export class LiveController{
     const input=this.workspace().bindings.audioInput;
     const queries:[LiveRead,Record<string,unknown>][]=[['GetSceneCollectionList',{}],['GetProfileList',{}],['GetSceneList',{}],['GetStreamStatus',{}]];
     if(input)queries.push(['GetInputMute',{inputName:input}]);
+    const studioIndex=queries.length;if(this.available.has('GetStudioModeEnabled'))queries.push(['GetStudioModeEnabled',{}]);
     const results=await Promise.allSettled(queries.map(([n,d])=>this.port.read(n,d))),warnings:string[]=[];
     const values=results.map((r,i)=>{if(r.status==='fulfilled'&&r.value&&typeof r.value==='object')return r.value;warnings.push(`${queries[i][0]} unavailable; its state is unknown.`);return{};});
     const stream=values[3];if(typeof stream.outputActive!=='boolean')warnings.push('OBS streaming state is unknown.');
     return {checkedAt:this.clock.now(),collection:str(values[0].currentSceneCollectionName),profile:str(values[1].currentProfileName),program:str(values[2].currentProgramSceneName),scenes:Array.isArray(values[2].scenes)?values[2].scenes.slice(0,1000).map((s:any)=>str(s.sceneName)).filter(Boolean):[],
-      streaming:flag(stream.outputActive),reconnecting:flag(stream.outputReconnecting),durationMs:num(stream.outputDuration),bytes:num(stream.outputBytes),skippedFrames:num(stream.outputSkippedFrames),totalFrames:num(stream.outputTotalFrames),inputName:input,muted:input?flag(values[4]?.inputMuted):null,warnings};
+      preview:str(values[2].currentPreviewSceneName),studio:flag(values[studioIndex]?.studioModeEnabled),streaming:flag(stream.outputActive),reconnecting:flag(stream.outputReconnecting),durationMs:num(stream.outputDuration),bytes:num(stream.outputBytes),skippedFrames:num(stream.outputSkippedFrames),totalFrames:num(stream.outputTotalFrames),inputName:input,muted:input?flag(values[4]?.inputMuted):null,warnings};
   }
   private infer(program:string):LivePhase{
     const matches=Object.entries(this.workspace().bindings.scenes).filter(([,name])=>name===program);
@@ -103,11 +112,11 @@ export class LiveController{
       if(!this.expectedEvent('program',program)&&program!==this.observed.program)this.interruptAutomation('OBS Program changed manually; pending app actions cancelled.');
       this.observed={...this.observed,program};this.phase=this.infer(program);this.emit();return;
     }
-    if(name==='CurrentPreviewSceneChanged'&&this.operatorKind==='preview'){
-      if(!this.expectedEvent('preview',d.sceneName))this.interruptAutomation('Preview changed outside the requested selection.');this.emit();return;
+    if(name==='CurrentPreviewSceneChanged'){
+      this.revision++;const ours=this.expectedEvent('preview',d.sceneName);if(this.working&&!ours&&d.sceneName!==this.observed.preview)this.interruptAutomation('Preview changed outside the requested selection.');this.observed={...this.observed,preview:str(d.sceneName)};this.emit();return;
     }
-    if(name==='StudioModeStateChanged'&&this.operation==='operator'){
-      if(!this.expectedEvent('studio',d.studioModeEnabled))this.interruptAutomation('Studio Mode changed outside this operator action.');this.emit();return;
+    if(name==='StudioModeStateChanged'){
+      this.revision++;const ours=this.expectedEvent('studio',d.studioModeEnabled);if(this.working&&!ours&&d.studioModeEnabled!==this.observed.studio)this.interruptAutomation('Studio Mode changed outside this operator action.');this.observed={...this.observed,studio:flag(d.studioModeEnabled)};this.emit();return;
     }
     if(name==='InputVolumeChanged'&&this.operatorKind==='volume'&&d.inputName===this.operatorInput){
       const target=this.expected.get('volume');
@@ -169,12 +178,13 @@ export class LiveController{
   async command(command:LiveCommand,value=''):Promise<void>{
     if(!LIVE_COMMANDS.includes(command))throw new LiveFailure('Unknown live action.');
     const operator=command==='operator'?parseOperatorAction(value):null;
+    const studioTake=command==='studio-take'?parseStudioIntent(value):null;
     await this.refresh();const reasons=this.snapshot().reasons[command];if(reasons.length)throw new LiveFailure(reasons.join(' '));
     if(operator&&(operator.collection!==this.observed.collection||operator.profile!==this.observed.profile))throw new LiveFailure('Operator target changed. Refresh the panel before sending another action.');
     this.cancelTimer();const token=++this.generation,connection=this.connection;
     this.working=true;this.operation=command;this.lastError='';
     const w=this.workspace(),key=liveMappingKey(w),serviceId=this.serviceId();
-    this.audioChanging=commandPermissions(command).audio||!!operator&&['mute','volume'].includes(operator.kind);
+    this.audioChanging=commandPermissions(command).audio||!!w.presentation?.enabled&&['presentation','speaker','bible','main','chapter','interlude','singing','prayer-scene','remote'].includes(command)||!!operator&&['mute','volume'].includes(operator.kind);
     this.operatorInput=operator&&'input' in operator?operator.input:'';this.operatorKind=operator?.kind||'';this.emit();
     const audioRevision=this.audioRevision;let streamIssued=false;
     let permittedPrograms=new Set([this.observed.program]),pendingProgram:string|null=null;
@@ -184,6 +194,7 @@ export class LiveController{
       if(!valid())throw new LiveFailure('Action interrupted; no further commands sent.');
       const o=await this.query();if(!valid())throw new LiveFailure('Action interrupted.');
       if(o.collection!==this.collection||o.profile!==this.profile||!o.program||o.streaming===null)throw new LiveFailure('OBS target or status changed. No further commands sent.');
+      if(command!=='stop'&&o.reconnecting!==false)throw new LiveFailure('Die OBS-Verbindung ist nicht stabil bestätigt. Keine weitere Aktion gesendet.');
       if(!permittedPrograms.has(o.program))throw new LiveFailure('Program changed outside this action. No further commands sent.');
       if(pendingProgram&&o.program===pendingProgram){permittedPrograms=new Set([pendingProgram]);pendingProgram=null;}
       if((command==='prepare'||command==='intro'||(command==='start'&&!streamIssued))&&(o.streaming!==false||o.reconnecting!==false))throw new LiveFailure('OBS is transmitting, reconnecting, or its reconnect state is unknown. Preparation stopped; it was not restarted.');
@@ -194,17 +205,24 @@ export class LiveController{
       if(operator){
         if(!p.operator||!operatorRequests(operator).includes(name)||name==='StartStream'||name==='StopStream')throw new LiveFailure('The operator action does not authorize this request.');
       }else{
-        if((['SetInputSettings','SetSceneItemEnabled','SetCurrentProgramScene'].includes(name)&&!p.scenes)||(name==='SetInputMute'&&!p.audio)||(['StartStream','StopStream'].includes(name)&&!p.stream))throw new LiveFailure('Permission was released.');
+        if((['SetInputSettings','SetSceneItemEnabled','SetCurrentProgramScene','SetSceneSceneTransitionOverride'].includes(name)&&!p.scenes)||(name==='SetInputMute'&&!p.audio)||(['StartStream','StopStream'].includes(name)&&!p.stream))throw new LiveFailure('Permission was released.');
+        if(['SetCurrentPreviewScene','TriggerStudioModeTransition','SetStudioModeEnabled'].includes(name)&&(!p.operator||!command.startsWith('studio-')))throw new LiveFailure('Studiosteuerung nicht freigegeben.');
+        if(name==='SetSceneSceneTransitionOverride'&&!Object.values(w.bindings.scenes).includes(String(data.sceneName)))throw new LiveFailure('Die Überblendung gehört nicht zu einer zugeordneten Szene.');
         if(name==='SetInputMute'&&(data.inputName!==w.bindings.audioInput||typeof data.inputMuted!=='boolean'))throw new LiveFailure('Service-input mismatch.');
         if(name==='StartStream'&&command!=='start')throw new LiveFailure('Start requires its separate confirmed action.');
         if(name==='StopStream'&&command!=='stop')throw new LiveFailure('Stop requires its separate confirmed action.');
       }
       await this.record(command,'requested',name);await check();
       if(name==='TriggerStudioModeTransition'){
-        if(!operator||operator.kind!=='take'||(await reader.read('GetStudioModeEnabled')).studioModeEnabled!==true||(await reader.read('GetCurrentPreviewScene')).currentPreviewSceneName!==operator.scene)throw new LiveFailure('Studio Preview changed before the transition. No transition was sent.');
-        pendingProgram=operator.scene;permittedPrograms.add(pendingProgram);this.expected.set('program',{value:pendingProgram,until:this.clock.now()+15000});
+        const target=operator?.kind==='take'?operator.scene:studioTake?w.bindings.scenes[studioTake.role]:undefined;
+        if(!target||(await reader.read('GetStudioModeEnabled')).studioModeEnabled!==true||(await reader.read('GetCurrentPreviewScene')).currentPreviewSceneName!==target)throw new LiveFailure('Studio Preview changed before the transition. No transition was sent.');
+        this.expected.set('preview',{value:this.observed.program,until:this.clock.now()+15000});
+        pendingProgram=target;permittedPrograms.add(pendingProgram);this.expected.set('program',{value:pendingProgram,until:this.clock.now()+15000});
       }
       if(name==='SetCurrentProgramScene'){
+        // OBS performs a transition in Studio Mode and may swap the old Program
+        // into Preview. That exact echo is ours, not an external interruption.
+        if(this.observed.studio===true)this.expected.set('preview',{value:this.observed.program,until:this.clock.now()+12000});
         pendingProgram=String(data.sceneName);permittedPrograms.add(pendingProgram);
         this.expected.set('program',{value:data.sceneName,until:this.clock.now()+12000});
       }
@@ -221,11 +239,11 @@ export class LiveController{
     };
     try{
       await this.record(command,'began','Operator action started.');await check();
-      const context={workspace:w,reader,serviceId,permissions:()=>({...this.permissions}),check,change,verified:(detail:string)=>this.record(command,'verified',detail)};
+      const context={workspace:w,reader,serviceId,presentation:w.presentation?.enabled?this.presentation:undefined,sceneDevices:this.sceneDevices,permissions:()=>({...this.permissions}),check,change,verified:(detail:string)=>this.record(command,'verified',detail)};
       const phase=operator?await executeOperatorAction(context,operator):await executeLiveAction(context,command,value);
       await check();await this.record(command,'completed','Requested action completed and read back.');
       if(!valid())throw new LiveFailure('Action was interrupted.');if(phase)this.phase=phase;else if(operator)this.phase=this.infer(this.observed.program);
-      if(command==='speaker'||command==='bible'||command==='prayer'){
+      if((command==='speaker'||command==='bible'||command==='prayer')&&!w.presentation?.enabled){
         const expectedScene=w.bindings.scenes[command]!;this.returnAt=this.clock.now()+15000;
         this.timer=this.clock.set(()=>{void this.returnMain(token,expectedScene);},15000);
       }
