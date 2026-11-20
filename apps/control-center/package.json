@@ -53,21 +53,18 @@
       "target": [
         {
           "target": "dmg",
-          "arch": [
-            "universal"
-          ]
+          "arch": ["universal"]
         },
         {
           "target": "zip",
-          "arch": [
-            "universal"
-          ]
+          "arch": ["universal"]
         }
       ],
       "identity": null,
       "hardenedRuntime": false,
       "extendInfo": {
-        "NSLocalNetworkUsageDescription": "Verbindet OBS und eingerichtete Geräte im lokalen Netz zur ausdrücklich freigegebenen Senderegie."
+        "NSLocalNetworkUsageDescription": "Verbindet OBS und eingerichtete Geräte im lokalen Netz zur ausdrücklich freigegebenen Senderegie.",
+        "NSMicrophoneUsageDescription": "Liest nur für die freigegebene Mitschrift den ausgewählten deutschen Sendeton."
       },
       "artifactName": "Broadcast-Control-Center-Preview-${version}-${arch}.${ext}"
     }
